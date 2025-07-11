@@ -1,35 +1,47 @@
-from pydantic_settings import BaseSettings, SettingsConfigDict
-from pathlib import Path
 import os
+from dotenv import load_dotenv
 
-# Проверка пути к .env
-env_path = Path(__file__).parent.parent / '.env'
-print(f"Путь к .env: {env_path}")
-print(f"Файл существует: {env_path.exists()}")
-print(f"Содержимое директории: {os.listdir(Path(__file__).parent.parent)}")
+load_dotenv()
 
-class Settings(BaseSettings):
-    BOT_TOKEN: str
-    TASK_BOT_TOKEN: str
-    BUTTONS_CHAT_ID: int
-    
-    REDIS_HOST: str = "localhost"
-    REDIS_PORT: int = 6379
-    REDIS_DB: int = 0
-    REDIS_PASSWORD: str = ""
+class Settings:
+    # Настройки Redis
+    REDIS_HOST = os.getenv("REDIS_HOST", "localhost")
+    REDIS_PORT = int(os.getenv("REDIS_PORT", 6379))
+    REDIS_DB = int(os.getenv("REDIS_DB", 0))
+    REDIS_PASSWORD = os.getenv("REDIS_PASSWORD")
+    REDIS_TASK_TTL = int(os.getenv("REDIS_TASK_TTL", 60 * 60 * 24 * 7))  # 1 неделя
 
-    model_config = SettingsConfigDict(
-        env_file=env_path,
-        env_file_encoding='utf-8',
-        extra='ignore'
-    )
+    # Настройки Telegram Bot Tokens
+    USER_BOT_TOKEN = os.getenv("USER_BOT_TOKEN")  # Для сбора задач
+    TASK_BOT_TOKEN = os.getenv("TASK_BOT_TOKEN")  # Для управления задачами
+    MOVER_BOT_TOKEN = os.getenv("MOVER_BOT_TOKEN")  # Для перемещения и статистики
 
-# Явная проверка с выводом
-try:
-    settings = Settings()
-    print("Настройки успешно загружены!")
-    print(f"BOT_TOKEN: {settings.BOT_TOKEN[:5]}...")  # Вывод части токена для проверки
-except Exception as e:
-    print(f"Ошибка загрузки: {e}")
-    print("Текущие переменные окружения:", os.environ)
-    raise
+    # ID чатов для управления задачами
+    MAIN_TASK_CHAT_ID = int(os.getenv("MAIN_TASK_CHAT_ID", "-1001234567890"))  # Чат для закрепленного сообщения
+    FORUM_CHAT_ID = int(os.getenv("FORUM_CHAT_ID", "-1001234567890"))  # Форум для задач
+
+    # ID стандартных тем
+    WAITING_TOPIC_ID = int(os.getenv("WAITING_TOPIC_ID", 1))  # Тема "Ожидающие задачи"
+    COMPLETED_TOPIC_ID = int(os.getenv("COMPLETED_TOPIC_ID", 3))  # Тема "Завершенные"
+
+    # Настройки обновления
+    STATS_UPDATE_INTERVAL = int(os.getenv("STATS_UPDATE_INTERVAL", 30))  # секунды
+
+    # Настройки форматирования
+    TASK_TOPIC_PREFIX = os.getenv("TASK_TOPIC_PREFIX", "🛠️ @")  # Префикс тем исполнителей
+
+    def verify_settings(self):
+        """Проверяет обязательные настройки"""
+        required_vars = [
+            "USER_BOT_TOKEN",
+            "TASK_BOT_TOKEN",
+            "MOVER_BOT_TOKEN",
+            "FORUM_CHAT_ID"
+        ]
+        
+        missing = [var for var in required_vars if not getattr(self, var)]
+        if missing:
+            raise ValueError(f"Отсутствуют обязательные настройки: {', '.join(missing)}")
+
+settings = Settings()
+settings.verify_settings()
