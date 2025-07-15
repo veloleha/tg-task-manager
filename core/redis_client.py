@@ -204,6 +204,10 @@ class RedisClient:
     async def close(self):
         """Закрывает соединение с Redis"""
         await self.conn.close()
+    
+    async def get_next_task_number(self) -> int:
+        """Генерирует уникальный номер задачи"""
+        return await self.conn.incr("global_task_counter")        
 
 
 # Глобальный экземпляр клиента Redis

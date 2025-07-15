@@ -24,7 +24,7 @@ async def save_message(message: types.Message):
         "assignee": None,
         "task_link": None,
         "reply": None,
-        "created_at": datetime.utcnow().isoformat(),
+        "created_at": datetime.isoformat(),
         "updated_at": None
     }
 
