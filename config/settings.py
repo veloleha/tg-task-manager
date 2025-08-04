@@ -1,8 +1,11 @@
 import os
 from dotenv import load_dotenv
 from typing import Optional
+import logging
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 class Settings:
     # Redis (обязательные)
@@ -21,10 +24,12 @@ class Settings:
     BUTTONS_CHAT_ID = int(os.getenv("BUTTONS_CHAT_ID", "-1002269851341"))
     FORUM_CHAT_ID = int(os.getenv("FORUM_CHAT_ID", "-1002269851341"))
     MAIN_TASK_CHAT_ID = int(os.getenv("MAIN_TASK_CHAT_ID", "-1002269851341"))  # Добавим для mover_bot
+    SUPPORT_CHAT_ID = int(os.getenv("SUPPORT_CHAT_ID", "-1002269851341"))  # Чат поддержки для task_bot
     
     # Intervals
     STATS_UPDATE_INTERVAL = int(os.getenv("STATS_UPDATE_INTERVAL", 30))
     REMINDER_CHECK_INTERVAL = int(os.getenv("REMINDER_CHECK_INTERVAL", 3600))
+    MESSAGE_AGGREGATION_TIMEOUT = int(os.getenv("MESSAGE_AGGREGATION_TIMEOUT", 60))  # 1 минута по умолчанию
     
     # Topics
     WAITING_TOPIC_ID = int(os.getenv("WAITING_TOPIC_ID", 1))
@@ -32,19 +37,43 @@ class Settings:
     
     # Форматирование
     TASK_TOPIC_PREFIX = os.getenv("TASK_TOPIC_PREFIX", "🛠️ @")
-
+    
+    # Webhook (удалены, так как теперь используется только polling)
+    
     def verify_settings(self):
         """Проверяем минимально необходимые настройки"""
-        required = {
-            "TASK_BOT_TOKEN": self.TASK_BOT_TOKEN,
-            "MOVER_BOT_TOKEN": self.MOVER_BOT_TOKEN,
-            "FORUM_CHAT_ID": self.FORUM_CHAT_ID,
-            "REDIS_HOST": self.REDIS_HOST
-        }
+        required = [
+            'USER_BOT_TOKEN',
+            'TASK_BOT_TOKEN',
+            'MOVER_BOT_TOKEN',
+            'REDIS_HOST',
+            'REDIS_PORT',
+            'SUPPORT_CHAT_ID',
+            'FORUM_CHAT_ID'
+        ]
         
-        missing = [name for name, value in required.items() if not value]
+        missing = []
+        for key in required:
+            if not getattr(self, key):
+                missing.append(key)
+        
         if missing:
             raise ValueError(f"Отсутствуют обязательные настройки: {', '.join(missing)}")
+        
+        # Проверяем, что чаты заданы корректно
+        try:
+            int(self.SUPPORT_CHAT_ID)
+            int(self.FORUM_CHAT_ID)
+        except ValueError:
+            raise ValueError("SUPPORT_CHAT_ID и FORUM_CHAT_ID должны быть числами")
+        
+        # Проверяем Redis настройки
+        try:
+            int(self.REDIS_PORT)
+        except ValueError:
+            raise ValueError("REDIS_PORT должен быть числом")
+        
+        logger.info("✅ Все настройки проверены успешно")
 
 settings = Settings()
 settings.verify_settings()

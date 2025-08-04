@@ -1,0 +1,299 @@
+2025-07-31 14:05:43,409 - __main__ - INFO - Запуск TaskBot...
+2025-07-31 14:05:43,409 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-07-31 14:05:43,409 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-07-31 14:05:43,409 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:05:43,409 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:05:45,455 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:05:45,455 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-07-31 14:05:45,455 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:05:45,457 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-07-31 14:05:45,457 - __main__ - INFO - Имитация публикации события о новой задаче...
+2025-07-31 14:05:45,457 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:05:45,457 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:05:45,458 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-07-31 14:05:47,501 - core.redis_client - INFO - Task saved with ID: 3f7d7d7f-9b91-4f53-9711-a4eadb32759d (key: task:3f7d7d7f-9b91-4f53-9711-a4eadb32759d)
+2025-07-31 14:05:47,501 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Received raw message: {'type': 'message', 'pattern': None, 'channel': b'new_tasks', 'data': b'{"type": "new_task", "task_id": "test_task_001"}'}
+2025-07-31 14:05:47,502 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Processing message on channel new_tasks: {'type': 'new_task', 'task_id': 'test_task_001'}
+2025-07-31 14:05:47,502 - bots.task_bot.pubsub_manager - INFO - Received message on channel new_tasks: {'type': 'new_task', 'task_id': 'test_task_001'}
+2025-07-31 14:05:47,502 - bots.task_bot.pubsub_manager - ERROR - [PUBSUB] Error processing message: TaskBot._pubsub_message_handler() missing 1 required positional argument: 'message'
+Traceback (most recent call last):
+  File "C:\git\task.manager\manager\bots\task_bot\pubsub_manager.py", line 82, in _listen
+    await self._handle_message(channel, event)
+  File "C:\git\task.manager\manager\bots\task_bot\pubsub_manager.py", line 137, in _handle_message
+    asyncio.create_task(handler(event))
+                        ^^^^^^^^^^^^^^
+TypeError: TaskBot._pubsub_message_handler() missing 1 required positional argument: 'message'
+2025-07-31 14:05:47,502 - __main__ - INFO - Ожидание обработки сообщения...
+2025-07-31 14:05:57,503 - __main__ - INFO - Завершение теста...
+2025-07-31 14:06:59,122 - __main__ - INFO - Запуск TaskBot...
+2025-07-31 14:06:59,122 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-07-31 14:06:59,122 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-07-31 14:06:59,122 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:06:59,122 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:07:01,183 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:07:01,183 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-07-31 14:07:01,183 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:07:01,183 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-07-31 14:07:01,183 - __main__ - INFO - Имитация публикации события о новой задаче...
+2025-07-31 14:07:01,183 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:07:01,183 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:07:01,184 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-07-31 14:07:03,225 - core.redis_client - INFO - Task saved with ID: 6e58acac-e65f-403d-a6d3-b87e791be96f (key: task:6e58acac-e65f-403d-a6d3-b87e791be96f)
+2025-07-31 14:07:03,226 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Received raw message: {'type': 'message', 'pattern': None, 'channel': b'new_tasks', 'data': b'{"type": "new_task", "task_id": "test_task_001"}'}
+2025-07-31 14:07:03,226 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Processing message on channel new_tasks: {'type': 'new_task', 'task_id': 'test_task_001'}
+2025-07-31 14:07:03,226 - bots.task_bot.pubsub_manager - INFO - Received message on channel new_tasks: {'type': 'new_task', 'task_id': 'test_task_001'}
+2025-07-31 14:07:03,226 - __main__ - INFO - Ожидание обработки сообщения...
+2025-07-31 14:07:03,226 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3] Received PubSub message on channel new_tasks: {'type': 'new_task', 'task_id': 'test_task_001'}
+2025-07-31 14:07:03,226 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3.1] Processing new task event for task_id: test_task_001
+2025-07-31 14:07:03,226 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 4] Начинаем обработку задачи: test_task_001
+2025-07-31 14:07:03,331 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 5] Читаем задачу из Redis: test_task_001
+2025-07-31 14:07:03,332 - bots.task_bot.task_bot - ERROR - [TASKBOT][STEP 5 ERROR] Задача не найдена: test_task_001
+2025-07-31 14:07:03,332 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3.2] Finished processing new task event for task_id: test_task_001
+2025-07-31 14:07:13,252 - __main__ - INFO - Завершение теста...
+2025-07-31 14:19:00,903 - __main__ - INFO - Запуск TaskBot...
+2025-07-31 14:19:00,903 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-07-31 14:19:00,903 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-07-31 14:19:00,903 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:19:00,903 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:19:02,958 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:19:02,958 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-07-31 14:19:02,959 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:19:02,959 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-07-31 14:19:02,959 - __main__ - INFO - Имитация публикации события о новой задаче...
+2025-07-31 14:19:02,959 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:19:02,959 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:19:02,960 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-07-31 14:19:05,008 - core.redis_client - INFO - Task saved with ID: d32f553c-85ee-436d-bde9-6197f2b6d084 (key: task:d32f553c-85ee-436d-bde9-6197f2b6d084)
+2025-07-31 14:19:05,008 - __main__ - INFO - Тестовая задача сохранена с ID: d32f553c-85ee-436d-bde9-6197f2b6d084
+2025-07-31 14:19:05,008 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Received raw message: {'type': 'message', 'pattern': None, 'channel': b'new_tasks', 'data': b'{"type": "new_task", "task_id": "d32f553c-85ee-436d-bde9-6197f2b6d084"}'}
+2025-07-31 14:19:05,009 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Processing message on channel new_tasks: {'type': 'new_task', 'task_id': 'd32f553c-85ee-436d-bde9-6197f2b6d084'}
+2025-07-31 14:19:05,009 - bots.task_bot.pubsub_manager - INFO - Received message on channel new_tasks: {'type': 'new_task', 'task_id': 'd32f553c-85ee-436d-bde9-6197f2b6d084'}
+2025-07-31 14:19:05,009 - __main__ - INFO - Ожидание обработки сообщения...
+2025-07-31 14:19:05,009 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3] Received PubSub message on channel new_tasks: {'type': 'new_task', 'task_id': 'd32f553c-85ee-436d-bde9-6197f2b6d084'}
+2025-07-31 14:19:05,009 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3.1] Processing new task event for task_id: d32f553c-85ee-436d-bde9-6197f2b6d084
+2025-07-31 14:19:05,009 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 4] Начинаем обработку задачи: d32f553c-85ee-436d-bde9-6197f2b6d084
+2025-07-31 14:19:05,115 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 5] Читаем задачу из Redis: d32f553c-85ee-436d-bde9-6197f2b6d084
+2025-07-31 14:19:05,115 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 6] Проверяем номер задачи...
+2025-07-31 14:19:05,116 - bots.task_bot.task_bot - ERROR - [TASKBOT][CRITICAL] Ошибка при обработке задачи d32f553c-85ee-436d-bde9-6197f2b6d084: RedisManager.update_task() got an unexpected keyword argument 'task_number'
+Traceback (most recent call last):
+  File "C:\git\task.manager\manager\bots\task_bot\task_bot.py", line 169, in _process_new_task
+    await self.redis.update_task(task_id, task_number=task_number)
+  File "C:\git\task.manager\manager\bots\task_bot\redis_manager.py", line 21, in update_task
+    return await self.redis.update_task(task_id, **fields)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+TypeError: RedisManager.update_task() got an unexpected keyword argument 'task_number'
+2025-07-31 14:19:05,116 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3.2] Finished processing new task event for task_id: d32f553c-85ee-436d-bde9-6197f2b6d084
+2025-07-31 14:19:15,020 - __main__ - INFO - Завершение теста...
+2025-07-31 14:23:28,092 - __main__ - INFO - Запуск TaskBot...
+2025-07-31 14:23:28,093 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-07-31 14:23:28,093 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-07-31 14:23:28,093 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:23:28,093 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:23:30,141 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:23:30,141 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-07-31 14:23:30,141 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:23:30,141 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-07-31 14:23:30,141 - __main__ - INFO - Имитация публикации события о новой задаче...
+2025-07-31 14:23:30,141 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:23:30,141 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:23:30,142 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-07-31 14:23:32,177 - core.redis_client - INFO - Task saved with ID: bea42ff2-7f47-4a08-bc1d-016533fe4e22 (key: task:bea42ff2-7f47-4a08-bc1d-016533fe4e22)
+2025-07-31 14:23:32,177 - __main__ - INFO - Тестовая задача сохранена с ID: bea42ff2-7f47-4a08-bc1d-016533fe4e22
+2025-07-31 14:23:32,178 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Received raw message: {'type': 'message', 'pattern': None, 'channel': b'new_tasks', 'data': b'{"type": "new_task", "task_id": "bea42ff2-7f47-4a08-bc1d-016533fe4e22"}'}
+2025-07-31 14:23:32,178 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Processing message on channel new_tasks: {'type': 'new_task', 'task_id': 'bea42ff2-7f47-4a08-bc1d-016533fe4e22'}
+2025-07-31 14:23:32,178 - bots.task_bot.pubsub_manager - INFO - Received message on channel new_tasks: {'type': 'new_task', 'task_id': 'bea42ff2-7f47-4a08-bc1d-016533fe4e22'}
+2025-07-31 14:23:32,178 - __main__ - INFO - Ожидание обработки сообщения...
+2025-07-31 14:23:32,178 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3] Received PubSub message on channel new_tasks: {'type': 'new_task', 'task_id': 'bea42ff2-7f47-4a08-bc1d-016533fe4e22'}
+2025-07-31 14:23:32,178 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3.1] Processing new task event for task_id: bea42ff2-7f47-4a08-bc1d-016533fe4e22
+2025-07-31 14:23:32,178 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 4] Начинаем обработку задачи: bea42ff2-7f47-4a08-bc1d-016533fe4e22
+2025-07-31 14:23:32,283 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 5] Читаем задачу из Redis: bea42ff2-7f47-4a08-bc1d-016533fe4e22
+2025-07-31 14:23:32,283 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 6] Проверяем номер задачи...
+2025-07-31 14:23:32,286 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 7] Создаём сообщение в чате поддержки для задачи: bea42ff2-7f47-4a08-bc1d-016533fe4e22
+2025-07-31 14:23:32,288 - bots.task_bot.task_bot - ERROR - [TASKBOT][CRITICAL] Ошибка при обработке задачи bea42ff2-7f47-4a08-bc1d-016533fe4e22: 1 validation error for InlineKeyboardMarkup
+inline_keyboard
+  Field required [type=missing, input_value={'row_width': 3}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.5/v/missing
+Traceback (most recent call last):
+  File "C:\git\task.manager\manager\bots\task_bot\task_bot.py", line 174, in _process_new_task
+    keyboard = InlineKeyboardMarkup(row_width=3)
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Program Files\Python311\Lib\site-packages\pydantic\main.py", line 164, in __init__
+    __pydantic_self__.__pydantic_validator__.validate_python(data, self_instance=__pydantic_self__)
+pydantic_core._pydantic_core.ValidationError: 1 validation error for InlineKeyboardMarkup
+inline_keyboard
+  Field required [type=missing, input_value={'row_width': 3}, input_type=dict]
+    For further information visit https://errors.pydantic.dev/2.5/v/missing
+2025-07-31 14:23:32,289 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3.2] Finished processing new task event for task_id: bea42ff2-7f47-4a08-bc1d-016533fe4e22
+2025-07-31 14:23:42,203 - __main__ - INFO - Завершение теста...
+2025-07-31 14:27:55,461 - __main__ - INFO - Запуск TaskBot...
+2025-07-31 14:27:55,461 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-07-31 14:27:55,461 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-07-31 14:27:55,461 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:27:55,461 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:27:57,493 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:27:57,493 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-07-31 14:27:57,494 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-07-31 14:27:57,494 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-07-31 14:27:57,494 - __main__ - INFO - Имитация публикации события о новой задаче...
+2025-07-31 14:27:57,494 - core.redis_client - INFO - Calling Redis connect method
+2025-07-31 14:27:57,494 - core.redis_client - INFO - Establishing Redis connection
+2025-07-31 14:27:57,494 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-07-31 14:27:59,537 - core.redis_client - INFO - Task saved with ID: e5d87c01-86ff-453a-ada7-c89040f444d6 (key: task:e5d87c01-86ff-453a-ada7-c89040f444d6)
+2025-07-31 14:27:59,537 - __main__ - INFO - Тестовая задача сохранена с ID: e5d87c01-86ff-453a-ada7-c89040f444d6
+2025-07-31 14:27:59,538 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Received raw message: {'type': 'message', 'pattern': None, 'channel': b'new_tasks', 'data': b'{"type": "new_task", "task_id": "e5d87c01-86ff-453a-ada7-c89040f444d6"}'}
+2025-07-31 14:27:59,538 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Processing message on channel new_tasks: {'type': 'new_task', 'task_id': 'e5d87c01-86ff-453a-ada7-c89040f444d6'}
+2025-07-31 14:27:59,538 - bots.task_bot.pubsub_manager - INFO - Received message on channel new_tasks: {'type': 'new_task', 'task_id': 'e5d87c01-86ff-453a-ada7-c89040f444d6'}
+2025-07-31 14:27:59,538 - __main__ - INFO - Ожидание обработки сообщения...
+2025-07-31 14:27:59,538 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3] Received PubSub message on channel new_tasks: {'type': 'new_task', 'task_id': 'e5d87c01-86ff-453a-ada7-c89040f444d6'}
+2025-07-31 14:27:59,538 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3.1] Processing new task event for task_id: e5d87c01-86ff-453a-ada7-c89040f444d6
+2025-07-31 14:27:59,538 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 4] Начинаем обработку задачи: e5d87c01-86ff-453a-ada7-c89040f444d6
+2025-07-31 14:27:59,642 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 5] Читаем задачу из Redis: e5d87c01-86ff-453a-ada7-c89040f444d6
+2025-07-31 14:27:59,642 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 6] Проверяем номер задачи...
+2025-07-31 14:27:59,645 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 7] Создаём сообщение в чате поддержки для задачи: e5d87c01-86ff-453a-ada7-c89040f444d6
+2025-07-31 14:27:59,834 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 7] Задача e5d87c01-86ff-453a-ada7-c89040f444d6 успешно создана в саппорт чате!
+2025-07-31 14:27:59,834 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 8] Обновляем задачу с данными сообщения...
+2025-07-31 14:27:59,835 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 8] Задача e5d87c01-86ff-453a-ada7-c89040f444d6 успешно обновлена!
+2025-07-31 14:27:59,835 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 3.2] Finished processing new task event for task_id: e5d87c01-86ff-453a-ada7-c89040f444d6
+2025-07-31 14:28:09,552 - __main__ - INFO - Завершение теста...
+2025-07-31 14:28:09,601 - asyncio - ERROR - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x0000025072552C90>
+2025-07-31 14:28:09,601 - asyncio - ERROR - Unclosed connector
+connections: ['[(<aiohttp.client_proto.ResponseHandler object at 0x000002507255C910>, 64677.25)]']
+connector: <aiohttp.connector.TCPConnector object at 0x0000025072550B10>
+2025-08-01 14:09:25,820 - core.redis_client - INFO - Calling Redis connect method
+2025-08-01 14:09:25,820 - core.redis_client - INFO - Establishing Redis connection
+2025-08-01 14:09:27,873 - core.redis_client - INFO - [DB][SAVE_TASK] Starting task save operation...
+2025-08-01 14:09:27,873 - core.redis_client - INFO - [DB][SAVE_TASK] Redis connection ensured
+2025-08-01 14:09:27,873 - core.redis_client - INFO - [DB][SAVE_TASK] Generated task ID: 3545739b-f001-488c-bf80-6a1ebb3bd7ee, key: task:3545739b-f001-488c-bf80-6a1ebb3bd7ee
+2025-08-01 14:09:27,873 - core.redis_client - INFO - [DB][SAVE_TASK] Task data serialized to JSON: 608 chars
+2025-08-01 14:09:27,873 - core.redis_client - INFO - [DB][SAVE_TASK] Added SET and EXPIRE commands to pipeline
+2025-08-01 14:09:27,873 - core.redis_client - INFO - [DB][SAVE_TASK] Added SADD command to pipeline for index
+2025-08-01 14:09:27,874 - core.redis_client - INFO - [DB][SAVE_TASK] Pipeline executed successfully: [True, True, 1]
+2025-08-01 14:09:27,896 - bots.task_bot.task_bot - INFO - Updating task 3545739b-f001-488c-bf80-6a1ebb3bd7ee status to in_progress
+2025-08-01 14:09:28,104 - bots.task_bot.task_bot - ERROR - Error updating message for task 3545739b-f001-488c-bf80-6a1ebb3bd7ee: Telegram server says - Bad Request: message to edit not found
+2025-08-01 14:09:28,105 - core.redis_client - INFO - [USERBOT][STEP 2] Published event to task_updates: {'type': 'status_change', 'task_id': '3545739b-f001-488c-bf80-6a1ebb3bd7ee', 'new_status': 'in_progress', 'changed_by': 'test_assignee'}
+2025-08-01 14:09:28,167 - asyncio - ERROR - Unclosed client session
+client_session: <aiohttp.client.ClientSession object at 0x000002A07473E290>
+2025-08-01 14:09:28,167 - asyncio - ERROR - Unclosed connector
+connections: ['[(<aiohttp.client_proto.ResponseHandler object at 0x000002A074711FD0>, 149965.515)]']
+connector: <aiohttp.connector.TCPConnector object at 0x000002A07473E090>
+2025-08-03 14:23:44,733 - __main__ - INFO - [TASKBOT][STEP 1] Starting TaskBot...
+2025-08-03 14:23:44,733 - __main__ - INFO - [TASKBOT][STEP 1.1] Subscribing to new_tasks channel...
+2025-08-03 14:23:44,734 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-08-03 14:23:44,734 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-08-03 14:23:44,735 - core.redis_client - INFO - Calling Redis connect method
+2025-08-03 14:23:44,735 - core.redis_client - INFO - Establishing Redis connection
+2025-08-03 14:23:46,781 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-03 14:23:46,781 - __main__ - INFO - [TASKBOT][STEP 1.2] Subscribing to task_updates channel...
+2025-08-03 14:23:46,782 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: task_updates
+2025-08-03 14:23:46,782 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: task_updates
+2025-08-03 14:23:46,782 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-03 14:23:46,782 - __main__ - INFO - [TASKBOT][STEP 1.3] TaskBot subscribed to 'new_tasks' and 'task_updates' channels
+2025-08-03 14:23:46,783 - __main__ - INFO - [TASKBOT][STEP 1.4] Starting PubSub listener...
+2025-08-03 14:23:46,783 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-08-03 14:23:46,783 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-03 14:23:46,783 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-03 14:23:46,783 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-08-03 14:23:46,783 - __main__ - INFO - [TASKBOT][STEP 1.5] PubSub listener started, starting polling...
+2025-08-03 14:23:46,783 - aiogram.dispatcher - INFO - Start polling
+2025-08-03 14:23:46,783 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-08-03 14:23:46,910 - aiogram.dispatcher - INFO - Run polling for bot @yourtaskmngr_bot id=8193252464 - 'task_bot'
+2025-08-03 14:23:51,049 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:23:51,049 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8193252464)
+2025-08-03 14:23:56,342 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:23:56,343 - aiogram.dispatcher - WARNING - Sleep for 1.336648 seconds and try again... (tryings = 1, bot id = 8193252464)
+2025-08-03 14:24:02,282 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:24:02,283 - aiogram.dispatcher - WARNING - Sleep for 1.691776 seconds and try again... (tryings = 2, bot id = 8193252464)
+2025-08-03 14:24:09,079 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:24:09,080 - aiogram.dispatcher - WARNING - Sleep for 2.189122 seconds and try again... (tryings = 3, bot id = 8193252464)
+2025-08-03 14:24:17,009 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:24:17,009 - aiogram.dispatcher - WARNING - Sleep for 2.907080 seconds and try again... (tryings = 4, bot id = 8193252464)
+2025-08-03 14:24:23,545 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:24:23,546 - aiogram.dispatcher - WARNING - Sleep for 3.841295 seconds and try again... (tryings = 5, bot id = 8193252464)
+2025-08-03 14:24:32,311 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:24:32,312 - aiogram.dispatcher - WARNING - Sleep for 4.956488 seconds and try again... (tryings = 6, bot id = 8193252464)
+2025-08-03 14:24:42,244 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:24:42,244 - aiogram.dispatcher - WARNING - Sleep for 4.936055 seconds and try again... (tryings = 7, bot id = 8193252464)
+2025-08-03 14:24:52,278 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:24:52,278 - aiogram.dispatcher - WARNING - Sleep for 4.869643 seconds and try again... (tryings = 8, bot id = 8193252464)
+2025-08-03 14:25:02,113 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:25:02,113 - aiogram.dispatcher - WARNING - Sleep for 4.986197 seconds and try again... (tryings = 9, bot id = 8193252464)
+2025-08-03 14:25:12,076 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:25:12,076 - aiogram.dispatcher - WARNING - Sleep for 5.042889 seconds and try again... (tryings = 10, bot id = 8193252464)
+2025-08-03 14:25:22,126 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:25:22,126 - aiogram.dispatcher - WARNING - Sleep for 4.908717 seconds and try again... (tryings = 11, bot id = 8193252464)
+2025-08-03 14:25:32,253 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:25:32,253 - aiogram.dispatcher - WARNING - Sleep for 4.875756 seconds and try again... (tryings = 12, bot id = 8193252464)
+2025-08-03 14:25:42,069 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 14:25:42,069 - aiogram.dispatcher - WARNING - Sleep for 5.041318 seconds and try again... (tryings = 13, bot id = 8193252464)
+2025-08-03 19:09:47,661 - __main__ - INFO - [TASKBOT][STEP 1] Starting TaskBot...
+2025-08-03 19:09:47,661 - __main__ - INFO - [TASKBOT][STEP 1.1] Subscribing to new_tasks channel...
+2025-08-03 19:09:47,661 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-08-03 19:09:47,661 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-08-03 19:09:47,662 - core.redis_client - INFO - Calling Redis connect method
+2025-08-03 19:09:47,662 - core.redis_client - INFO - Establishing Redis connection
+2025-08-03 19:09:49,706 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-03 19:09:49,707 - __main__ - INFO - [TASKBOT][STEP 1.2] Subscribing to task_updates channel...
+2025-08-03 19:09:49,707 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: task_updates
+2025-08-03 19:09:49,707 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: task_updates
+2025-08-03 19:09:49,707 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-03 19:09:49,707 - __main__ - INFO - [TASKBOT][STEP 1.3] TaskBot subscribed to 'new_tasks' and 'task_updates' channels
+2025-08-03 19:09:49,707 - __main__ - INFO - [TASKBOT][STEP 1.4] Starting PubSub listener...
+2025-08-03 19:09:49,707 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-08-03 19:09:49,708 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-03 19:09:49,708 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-03 19:09:49,708 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-08-03 19:09:49,708 - __main__ - INFO - [TASKBOT][STEP 1.5] PubSub listener started, starting polling...
+2025-08-03 19:09:49,708 - aiogram.dispatcher - INFO - Start polling
+2025-08-03 19:09:49,708 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-08-03 19:09:49,800 - aiogram.dispatcher - INFO - Run polling for bot @yourtaskmngr_bot id=8193252464 - 'task_bot'
+2025-08-03 19:11:18,707 - core.redis_client - ERROR - Redis connection error: Event loop is closed
+2025-08-03 19:11:18,708 - bots.task_bot.redis_manager - ERROR - Error getting executor statistics: Event loop is closed
+2025-08-03 19:12:12,052 - core.redis_client - ERROR - Redis connection error: Event loop is closed
+2025-08-03 19:12:12,052 - bots.task_bot.redis_manager - ERROR - Error getting executor statistics: Event loop is closed
+2025-08-03 19:24:42,173 - __main__ - INFO - [TASKBOT][STEP 1] Starting TaskBot...
+2025-08-03 19:24:42,173 - __main__ - INFO - [TASKBOT][STEP 1.1] Subscribing to new_tasks channel...
+2025-08-03 19:24:42,173 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-08-03 19:24:42,174 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-08-03 19:24:42,174 - core.redis_client - INFO - Calling Redis connect method
+2025-08-03 19:24:42,174 - core.redis_client - INFO - Establishing Redis connection
+2025-08-03 19:24:44,219 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-03 19:24:44,219 - __main__ - INFO - [TASKBOT][STEP 1.2] Subscribing to task_updates channel...
+2025-08-03 19:24:44,219 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: task_updates
+2025-08-03 19:24:44,219 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: task_updates
+2025-08-03 19:24:44,219 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-03 19:24:44,219 - __main__ - INFO - [TASKBOT][STEP 1.3] TaskBot subscribed to 'new_tasks' and 'task_updates' channels
+2025-08-03 19:24:44,219 - __main__ - INFO - [TASKBOT][STEP 1.4] Starting PubSub listener...
+2025-08-03 19:24:44,219 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-08-03 19:24:44,220 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-03 19:24:44,220 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-03 19:24:44,220 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-08-03 19:24:44,220 - __main__ - INFO - [TASKBOT][STEP 1.5] PubSub listener started, starting polling...
+2025-08-03 19:24:44,220 - aiogram.dispatcher - INFO - Start polling
+2025-08-03 19:24:44,220 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-08-03 19:24:44,341 - aiogram.dispatcher - INFO - Run polling for bot @yourtaskmngr_bot id=8193252464 - 'task_bot'
+2025-08-03 19:24:44,395 - aiogram.event - INFO - Update id=985615703 is not handled. Duration 0 ms by bot id=8193252464
+2025-08-03 19:24:44,395 - aiogram.event - INFO - Update id=985615704 is not handled. Duration 0 ms by bot id=8193252464
+2025-08-03 19:38:23,116 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:38:23,116 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8193252464)
+2025-08-03 19:38:28,240 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:38:28,240 - aiogram.dispatcher - WARNING - Sleep for 1.326363 seconds and try again... (tryings = 1, bot id = 8193252464)
+2025-08-03 19:38:33,992 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:38:33,992 - aiogram.dispatcher - WARNING - Sleep for 1.758756 seconds and try again... (tryings = 2, bot id = 8193252464)
+2025-08-03 19:38:40,729 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:38:40,729 - aiogram.dispatcher - WARNING - Sleep for 2.408350 seconds and try again... (tryings = 3, bot id = 8193252464)
+2025-08-03 19:38:48,782 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:38:48,783 - aiogram.dispatcher - WARNING - Sleep for 3.050681 seconds and try again... (tryings = 4, bot id = 8193252464)
+2025-08-03 19:38:55,276 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:38:55,277 - aiogram.dispatcher - WARNING - Sleep for 3.987382 seconds and try again... (tryings = 5, bot id = 8193252464)
+2025-08-03 19:39:03,640 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:39:03,640 - aiogram.dispatcher - WARNING - Sleep for 4.820008 seconds and try again... (tryings = 6, bot id = 8193252464)
+2025-08-03 19:39:13,547 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:39:13,547 - aiogram.dispatcher - WARNING - Sleep for 5.141891 seconds and try again... (tryings = 7, bot id = 8193252464)
+2025-08-03 19:39:23,833 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:39:23,834 - aiogram.dispatcher - WARNING - Sleep for 5.016997 seconds and try again... (tryings = 8, bot id = 8193252464)
+2025-08-03 19:39:34,086 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:39:34,086 - aiogram.dispatcher - WARNING - Sleep for 4.925894 seconds and try again... (tryings = 9, bot id = 8193252464)
+2025-08-03 19:39:44,069 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-03 19:39:44,070 - aiogram.dispatcher - WARNING - Sleep for 5.019810 seconds and try again... (tryings = 10, bot id = 8193252464)
+2025-08-03 19:39:59,146 - aiogram.dispatcher - INFO - Connection established (tryings = 11, bot id = 8193252464)

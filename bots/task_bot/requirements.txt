@@ -1,0 +1,33 @@
+# Task Bot Dependencies
+
+# Telegram Bot Framework
+aiogram==3.4.1
+
+# Redis Client
+redis[hiredis]==5.0.1
+
+# Environment Variables
+python-dotenv==1.0.0
+
+# Date and Time Utilities
+python-dateutil==2.8.2
+
+# Async HTTP Client (used by aiogram)
+aiohttp==3.9.1
+
+# JSON handling (built-in, but listed for clarity)
+# json - built-in module
+
+# Logging (built-in, but enhanced)
+# logging - built-in module
+
+# Type Hints
+typing-extensions==4.9.0
+
+# Development Dependencies (optional)
+# pytest==7.4.3
+# pytest-asyncio==0.21.1
+# pytest-cov==4.1.0
+# black==23.11.0
+# flake8==6.1.0
+# mypy==1.7.1
