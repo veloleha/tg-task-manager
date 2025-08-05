@@ -14,6 +14,7 @@ class RedisManager:
         self.conn = None
         self.pubsub_conn = None  # Отдельное соединение для PubSub
         self.task_counter = 0
+        self._enhanced_stats = None  # Lazy initialization
 
     async def _ensure_connection(self):
         """Проверяет подключение к Redis"""
@@ -33,6 +34,12 @@ class RedisManager:
             # Проверяем соединение через PING
             if not await self.conn.ping():
                 raise ConnectionError("Redis connection failed")
+                
+            # Initialize enhanced statistics if not already done
+            if self._enhanced_stats is None:
+                from .enhanced_statistics import EnhancedStatistics
+                self._enhanced_stats = EnhancedStatistics(self)
+                
         except Exception as e:
             logger.error(f"Redis connection error: {e}")
             # Закрываем соединение при ошибке
@@ -142,20 +149,43 @@ class RedisManager:
             logger.error(f"Error updating task {task_id}: {e}")
             return False
 
-    async def update_task_status(self, task_id: str, status: str):
-        """Обновляет статус задачи"""
+    async def update_task_status(self, task_id: str, status: str, executor: str = None) -> bool:
+        """Обновляет статус задачи с обновлением счётчиков"""
         try:
             await self._ensure_connection()
+            
+            # Ensure enhanced stats is initialized
+            if self._enhanced_stats is None:
+                from .enhanced_statistics import EnhancedStatistics
+                self._enhanced_stats = EnhancedStatistics(self)
+            
             task = await self.get_task(task_id)
             if not task:
                 return False
-                
+            
+            old_status = task.get('status')
+            old_executor = task.get('assignee')
+            
+            # Update task data
             task['status'] = status
+            if executor:
+                task['assignee'] = executor
             task['updated_at'] = datetime.utcnow().isoformat()
-            await self.conn.set(task_id, json.dumps(task))
+            
+            await self.conn.set(f"task:{task_id}", json.dumps(task))
+            
+            # Update statistics counters
+            current_executor = executor or old_executor
+            await self._enhanced_stats.update_task_status_counters(
+                old_status, status, current_executor
+            )
+            
+            logger.debug(f"Task status updated: {task_id} -> {status} (executor: {current_executor})")
             return True
         except Exception as e:
             logger.error(f"Error updating task status: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return False
 
     async def set_assignee(self, task_id: str, username: str):
@@ -205,18 +235,19 @@ class RedisManager:
         """Возвращает глобальную статистику по задачам"""
         try:
             await self._ensure_connection()
-            return {
-                "unreacted": int(await self.conn.get("counter:unreacted") or 0),
-                "waiting": int(await self.conn.get("counter:waiting") or 0),
-                "in_progress": int(await self.conn.get("counter:in_progress") or 0),
-                "completed": int(await self.conn.get("counter:completed") or 0),
-                "executors": await self.get_executors_stats()
-            }
+            
+            # Ensure enhanced stats is initialized
+            if self._enhanced_stats is None:
+                from .enhanced_statistics import EnhancedStatistics
+                self._enhanced_stats = EnhancedStatistics(self)
+                
+            return await self._enhanced_stats.get_global_stats()
         except Exception as e:
             logger.error(f"Error getting global stats: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
             return {
                 "unreacted": 0,
-                "waiting": 0,
                 "in_progress": 0,
                 "completed": 0,
                 "executors": {}
@@ -377,6 +408,74 @@ class RedisManager:
             
         except Exception as e:
             logger.error(f"Error deleting task {task_id}: {e}")
+            raise
+    
+    # ==================== ENHANCED STATISTICS METHODS ====================
+    
+    async def get_period_stats(self, period: str) -> Dict[str, Dict[str, int]]:
+        """Get statistics for a specific period (day/week/month)"""
+        try:
+            await self._ensure_connection()
+            
+            # Ensure enhanced stats is initialized
+            if self._enhanced_stats is None:
+                from .enhanced_statistics import EnhancedStatistics
+                self._enhanced_stats = EnhancedStatistics(self)
+                
+            return await self._enhanced_stats.get_period_stats(period)
+        except Exception as e:
+            logger.error(f"Error getting {period} stats: {e}")
+            return {}
+    
+    async def format_pinned_message(self, stats: Dict[str, Any] = None) -> str:
+        """Format enhanced pinned message with executor statistics"""
+        try:
+            await self._ensure_connection()
+            
+            # Ensure enhanced stats is initialized
+            if self._enhanced_stats is None:
+                from .enhanced_statistics import EnhancedStatistics
+                self._enhanced_stats = EnhancedStatistics(self)
+            
+            if stats is None:
+                stats = await self.get_global_stats()
+            return self._enhanced_stats.format_pinned_message(stats)
+        except Exception as e:
+            logger.error(f"Error formatting pinned message: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            return "📊 Ошибка получения статистики"
+    
+    async def format_period_stats_message(self, period: str, stats: Dict[str, Dict[str, int]] = None) -> str:
+        """Format period statistics message"""
+        try:
+            await self._ensure_connection()
+            
+            # Ensure enhanced stats is initialized
+            if self._enhanced_stats is None:
+                from .enhanced_statistics import EnhancedStatistics
+                self._enhanced_stats = EnhancedStatistics(self)
+                
+            if stats is None:
+                stats = await self.get_period_stats(period)
+            return self._enhanced_stats.format_period_stats_message(period, stats)
+        except Exception as e:
+            logger.error(f"Error formatting period stats: {e}")
+            return f"📈 Ошибка получения статистики за {period}"
+    
+    async def reset_all_counters(self):
+        """Reset all statistics counters (for testing/debugging)"""
+        try:
+            await self._ensure_connection()
+            
+            # Ensure enhanced stats is initialized
+            if self._enhanced_stats is None:
+                from .enhanced_statistics import EnhancedStatistics
+                self._enhanced_stats = EnhancedStatistics(self)
+                
+            await self._enhanced_stats.reset_all_counters()
+        except Exception as e:
+            logger.error(f"Error resetting counters: {e}")
             raise
 
 

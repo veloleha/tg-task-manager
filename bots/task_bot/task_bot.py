@@ -12,7 +12,7 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 
 # Локальные импорты
-from bots.task_bot.redis_manager import RedisManager
+from core.redis_client import redis_client
 from .pubsub_manager import TaskBotPubSubManager
 from bots.task_bot.formatters import format_task_message
 from bots.task_bot.keyboards import create_task_keyboard
@@ -36,7 +36,7 @@ class TaskBot:
     def __init__(self):
         self.bot = Bot(token=settings.TASK_BOT_TOKEN)
         self.dp = Dispatcher()
-        self.redis = RedisManager()
+        self.redis = redis_client
         self.pubsub_manager = TaskBotPubSubManager()
         self.waiting_replies: Dict[int, str] = {}  # {user_id: task_id}
         self._setup_handlers()
@@ -131,7 +131,7 @@ class TaskBot:
             elif channel == "task_updates":
                 # Обрабатываем события изменения статуса для обновления закрепленного сообщения
                 event_type = message.get("type")
-                if event_type in ["status_change", "task_assigned", "task_completed"]:
+                if event_type in ["status_change", "task_assigned", "task_completed", "task_deleted"]:
                     task_id = message.get("task_id")
                     logger.info(f"[TASKBOT] Received {event_type} event for task {task_id}, updating pinned stats")
                     await self._update_pinned_stats()
@@ -178,9 +178,14 @@ class TaskBot:
                 task['task_number'] = task_number
                 logger.info(f"✅ Присвоен номер задачи: {task_number}")
 
+            # Инкрементируем счетчик неотреагированных задач
+            logger.info(f"[TASKBOT][STEP 6.5] Инкрементируем счетчик неотреагированных задач")
+            from core.redis_client import redis_client
+            await redis_client.conn.incr("counter:unreacted")
+            logger.info(f"[TASKBOT][STEP 6.5] ✅ Счетчик неотреагированных задач увеличен")
+
             # Отправляем сообщение в MoverBot для перемещения в тему "неотреагированные"
             logger.info(f"[TASKBOT][STEP 7] Отправляем сообщение в MoverBot для перемещения в тему 'неотреагированные'")
-            from core.redis_client import redis_client
             await redis_client.publish_event("task_updates", {
                 "type": "new_task",
                 "task_id": task_id
@@ -459,14 +464,14 @@ class TaskBot:
     async def _update_pinned_stats(self):
         """Обновляет закреплённое сообщение со статистикой в главном чате"""
         try:
-            # Получаем статистику из Redis
-            stats = await self.redis.get_statistics()
+            # Получаем статистику из Redis с новой системой
+            stats = await redis_client.get_global_stats()
             
-            # Формируем текст статистики
-            stats_text = await self._format_pinned_stats(stats)
+            # Формируем текст статистики с новым форматированием
+            stats_text = await redis_client.format_pinned_message(stats)
             
             # Получаем ID закреплённого сообщения
-            pinned_msg_id = await self.redis.get_pinned_message_id()
+            pinned_msg_id = await redis_client.get_pinned_message_id()
             
             if pinned_msg_id:
                 # Обновляем существующее сообщение
@@ -492,7 +497,7 @@ class TaskBot:
                     if any(phrase in error_text.lower() for phrase in ["message to edit not found", "message not found", "bad request"]):
                         logger.info(f"Pinned message {pinned_msg_id} not found, creating new one")
                         # Очищаем ID из Redis и создаём новое
-                        await self.redis.set_pinned_message_id(None)
+                        await redis_client.set_pinned_message_id(None)
                         await self._create_new_pinned_stats(stats_text)
                         return
                     
@@ -541,33 +546,14 @@ class TaskBot:
             logger.error(f"Error creating new pinned stats: {e}")
     
     async def _format_pinned_stats(self, stats: dict) -> str:
-        """Форматирует текст статистики для закреплённого сообщения"""
+        """Форматирует текст статистики для закреплённого сообщения (устаревший метод)"""
         try:
-            # Получаем статистику по исполнителям
-            executor_stats = await self.redis.get_executor_statistics()
-            
-            # Формируем текст
-            text_parts = [
-                "<b>Статистика задач</b>\n",
-                f"Неотреагированные: {stats.get('unreacted', 0)}",
-                "В работе:"
-            ]
-            
-            # Добавляем статистику по исполнителям
-            if executor_stats:
-                for executor, count in executor_stats.items():
-                    if count > 0:
-                        text_parts.append(f"                      @{executor}    {count}")
-            else:
-                text_parts.append("                      Нет задач в работе")
-            
-            text_parts.append(f"Выполненные: {stats.get('completed', 0)}")
-            
-            return "\n".join(text_parts)
+            # Используем новую систему форматирования
+            return await self.redis.format_pinned_message(stats)
             
         except Exception as e:
             logger.error(f"Error formatting pinned stats: {e}")
-            return "<b>Статистика задач</b>\nОшибка загрузки статистики"
+            return "📊 Ошибка получения статистики"
 
     async def start_polling(self):
         """Запуск бота в режиме long polling с инициализацией PubSub"""

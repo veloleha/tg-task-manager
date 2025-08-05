@@ -9,6 +9,7 @@ from typing import Dict, Optional, Any
 
 from core.redis_client import redis_client
 from core.pubsub_manager import MoverBotPubSubManager
+from bots.task_bot.redis_manager import RedisManager
 from .topic_keyboards import create_unreacted_topic_keyboard, create_executor_topic_keyboard, create_completed_topic_keyboard
 
 logging.basicConfig(level=logging.INFO)
@@ -48,6 +49,7 @@ class MoverBot:
     def __init__(self):
         self.bot = Bot(token=settings.MOVER_BOT_TOKEN)
         self.dp = Dispatcher()
+        self.redis = RedisManager()
         self.pinned_msg_id = None
         self.active_topics = {
             "unreacted": None,  # ID темы для неотреагированных задач
@@ -119,7 +121,7 @@ class MoverBot:
                 return
             
             # Обновляем статус задачи и назначаем исполнителя
-            await redis_client.update_task(task_id, status="in_progress", assignee=executor)
+            await redis_client.update_task_status(task_id, "in_progress", executor)
             
             # Удаляем сообщение из темы "неотреагированные"
             await callback.message.delete()
@@ -143,7 +145,7 @@ class MoverBot:
                 return
             
             # Обновляем статус задачи и назначаем исполнителя
-            await redis_client.update_task(task_id, status="in_progress", assignee=executor)
+            await redis_client.update_task_status(task_id, "in_progress", executor)
             
             # Удаляем сообщение из темы "неотреагированные"
             await callback.message.delete()
@@ -160,11 +162,20 @@ class MoverBot:
     async def _handle_delete_task(self, callback, task_id: str):
         """Обрабатывает нажатие кнопки 'Удалить'"""
         try:
-            # Удаляем задачу из Redis
-            await redis_client.delete_task(task_id)
+            # Удаляем задачу из Redis с правильным декрементом счетчиков
+            await self.redis.delete_task(task_id)
             
             # Удаляем сообщение
             await callback.message.delete()
+            
+            # Отправляем событие об удалении задачи для обновления закреплённого сообщения
+            await redis_client.publish_event("task_updates", {
+                "type": "task_deleted",
+                "task_id": task_id
+            })
+            
+            # Обновляем статистику (только логирование)
+            await self._update_pinned_stats()
             
             await callback.answer("Задача удалена")
             
@@ -175,8 +186,14 @@ class MoverBot:
     async def _handle_complete_task(self, callback, task_id: str):
         """Обрабатывает нажатие кнопки 'Завершить'"""
         try:
+            # Получаем задачу для определения исполнителя
+            task = await redis_client.get_task(task_id)
+            if not task:
+                await callback.answer("Задача не найдена", show_alert=True)
+                return
+            
             # Обновляем статус задачи
-            await redis_client.update_task(task_id, status="completed")
+            await redis_client.update_task_status(task_id, "completed", task.get('assignee'))
             
             # Удаляем сообщение из темы исполнителя
             await callback.message.delete()
@@ -211,7 +228,7 @@ class MoverBot:
             
             # Обновляем статус задачи на "in_progress"
             executor = task.get('assignee', '')
-            await redis_client.update_task(task_id, status="in_progress")
+            await redis_client.update_task_status(task_id, "in_progress", executor)
             
             # Удаляем сообщение из темы "завершённые"
             await callback.message.delete()
