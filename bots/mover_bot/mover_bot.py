@@ -1,4 +1,6 @@
 from aiogram import Bot
+from aiogram.fsm.context import FSMContext
+from aiogram.fsm.state import State, StatesGroup
 from config.settings import settings
 import logging
 import asyncio
@@ -17,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 
 from aiogram import Dispatcher
+
+class ReplyState(StatesGroup):
+    waiting_for_reply = State()
 
 class MoverBot:
     async def start_polling(self):
@@ -58,6 +63,7 @@ class MoverBot:
             "executors": {}     # {"username": topic_id}
         }
         self.reminder_tasks = {}
+        self.waiting_replies: Dict[int, str] = {}  # {user_id: task_id}
         self.pubsub_manager = MoverBotPubSubManager(bot_instance=self)
         
         # Регистрируем обработчики callback-ов для новых кнопок
@@ -95,15 +101,26 @@ class MoverBot:
         
         # Обработчик для кнопки "Ответить"
         @self.dp.callback_query(F.data.startswith("topic_reply_"))
-        async def handle_reply_task(callback):
+        async def handle_reply_task(callback, state: FSMContext):
             task_id = callback.data.split("_", 2)[2]
-            await self._handle_reply_task(callback, task_id)
+            await self._handle_reply_task(callback, task_id, state)
         
         # Обработчик для кнопки "Переоткрыть"
         @self.dp.callback_query(F.data.startswith("topic_reopen_"))
         async def handle_reopen_task(callback):
             task_id = callback.data.split("_", 2)[2]
             await self._handle_reopen_task(callback, task_id)
+        
+        # Обработчик сообщений в состоянии ожидания ответа
+        @self.dp.message(ReplyState.waiting_for_reply)
+        async def handle_reply_message(message, state: FSMContext):
+            user_id = message.from_user.id
+            if user_id in self.waiting_replies:
+                task_id = self.waiting_replies.pop(user_id)
+                logger.info(f"Received reply for task {task_id} from {message.from_user.username}")
+                await self._save_reply(task_id, message.text, message.from_user.username, message.message_id, message.chat.id)
+                await message.reply("✅ Ответ сохранён и отправлен пользователю!")
+                await state.clear()
     
     async def _handle_take_task(self, callback, task_id: str):
         """Обрабатывает нажатие кнопки 'В работу'"""
@@ -207,15 +224,48 @@ class MoverBot:
             logger.error(f"Ошибка при завершении задачи: {e}")
             await callback.answer("Ошибка при завершении задачи", show_alert=True)
     
-    async def _handle_reply_task(self, callback, task_id: str):
+    async def _handle_reply_task(self, callback, task_id: str, state: FSMContext):
         """Обрабатывает нажатие кнопки 'Ответить'"""
         try:
-            # Пока просто уведомляем, что функция будет реализована
-            await callback.answer("Функция ответа будет реализована позже")
+            # Устанавливаем состояние ожидания ответа
+            await callback.answer("Введите ваш ответ на задачу:")
+            self.waiting_replies[callback.from_user.id] = task_id
+            await state.set_state(ReplyState.waiting_for_reply)
+            
+            logger.info(f"Waiting reply for task {task_id} from {callback.from_user.username}")
             
         except Exception as e:
             logger.error(f"Ошибка при ответе на задачу: {e}")
             await callback.answer("Ошибка при ответе на задачу", show_alert=True)
+    
+    async def _save_reply(self, task_id: str, reply_text: str, username: str, reply_message_id: int, reply_chat_id: int):
+        """Сохраняет ответ к задаче и уведомляет UserBot"""
+        try:
+            logger.info(f"Saving reply for task {task_id} from @{username}")
+            
+            # Сохраняем ответ в базе данных
+            await self.redis.update_task(
+                task_id,
+                reply=reply_text,
+                reply_author=username,
+                reply_at=datetime.now().isoformat()
+            )
+            
+            # Отправляем событие UserBot для пересылки ответа пользователю
+            await redis_client.publish_event("task_updates", {
+                "type": "new_reply",
+                "task_id": task_id,
+                "reply_text": reply_text,
+                "reply_author": username,
+                "reply_at": datetime.now().isoformat(),
+                "reply_message_id": reply_message_id,
+                "reply_chat_id": reply_chat_id
+            })
+            
+            logger.info(f"Reply saved and event published for task {task_id}")
+            
+        except Exception as e:
+            logger.error(f"Error saving reply for task {task_id}: {e}", exc_info=True)
     
     async def _handle_reopen_task(self, callback, task_id: str):
         """Обрабатывает нажатие кнопки 'Переоткрыть'"""

@@ -641,36 +641,81 @@ class UserBot:
             
             user_id = int(task.get('user_id', 0))
             chat_id = int(task.get('chat_id', 0))
-            reply_text = task.get('reply', '')
-            reply_author = task.get('reply_author', '')
+            # Получаем данные ответа из события или из задачи
+            reply_text = update_data.get('reply_text') or task.get('reply', '')
+            reply_author = update_data.get('reply_author') or task.get('reply_author', '')
+            reply_message_id = update_data.get('reply_message_id')
+            reply_chat_id = update_data.get('reply_chat_id')
             
             if reply_text and user_id and chat_id:
-                # Получаем или создаем тему пользователя
-                topic_id = await self.topic_manager.get_or_create_user_topic(
-                    user_id,
-                    task.get('username'),
-                    task.get('first_name')
-                )
+                logger.info(f"Processing reply for task {task_id}, user {user_id}, trying to forward to user topic")
                 
-                # Отправляем ответ в тему пользователя
-                if topic_id:
-                    await self.bot.send_message(
-                        chat_id=settings.FORUM_CHAT_ID,
-                        message_thread_id=topic_id,
-                        text=f"💬 <b>Ответ от @{reply_author}:</b>\n\n{reply_text}",
-                        parse_mode="HTML"
-                    )
+                # Проверяем, является ли оригинальный чат форумом
+                topic_id = None
+                target_chat_id = chat_id  # Используем оригинальный чат
                 
-                # Также отправляем ответ пользователю напрямую как ответ на оригинальное сообщение
+                try:
+                    # Проверяем, является ли чат форумом
+                    chat_info = await self.bot.get_chat(target_chat_id)
+                    if chat_info.is_forum:
+                        # Если оригинальный чат - форум, создаём тему там
+                        topic_id = await self.topic_manager.get_or_create_user_topic(
+                            target_chat_id,
+                            user_id,
+                            task.get('username'),
+                            task.get('first_name')
+                        )
+                        logger.info(f"Got user topic {topic_id} for user {user_id} in forum chat {target_chat_id}")
+                    else:
+                        # Если оригинальный чат не форум, пробуем форумный чат из настроек
+                        logger.info(f"Original chat {target_chat_id} is not a forum, trying forum chat {settings.FORUM_CHAT_ID}")
+                        target_chat_id = settings.FORUM_CHAT_ID
+                        topic_id = await self.topic_manager.get_or_create_user_topic(
+                            target_chat_id,
+                            user_id,
+                            task.get('username'),
+                            task.get('first_name')
+                        )
+                        logger.info(f"Got user topic {topic_id} for user {user_id} in forum chat {target_chat_id}")
+                except Exception as e:
+                    logger.error(f"Failed to get/create user topic for user {user_id}: {e}")
+                    topic_id = None
+                    target_chat_id = None
+                
+                # Пересылаем ответ в тему пользователя (если есть ID сообщения и тема)
+                forwarded_to_topic = False
+                if topic_id and reply_message_id and reply_chat_id and target_chat_id:
+                    try:
+                        logger.info(f"Attempting to forward message {reply_message_id} from chat {reply_chat_id} to topic {topic_id} in chat {target_chat_id}")
+                        await self.bot.forward_message(
+                            chat_id=target_chat_id,
+                            from_chat_id=reply_chat_id,
+                            message_id=reply_message_id,
+                            message_thread_id=topic_id
+                        )
+                        logger.info(f"Successfully forwarded reply message to user topic {topic_id} in chat {target_chat_id}")
+                        forwarded_to_topic = True
+                    except Exception as e:
+                        logger.warning(f"Could not forward reply to user topic {topic_id} in chat {target_chat_id}: {e}")
+                        # Не отправляем fallback сообщение в тему, чтобы избежать дублирования
+                        forwarded_to_topic = False
+                elif not topic_id:
+                    logger.warning(f"No user topic available for user {user_id}, skipping topic forwarding")
+                elif not reply_message_id or not reply_chat_id:
+                    logger.warning(f"Missing reply message data: message_id={reply_message_id}, chat_id={reply_chat_id}")
+                
+                # Отправляем ответ пользователю напрямую как ответ на оригинальное сообщение (только один раз!)
                 try:
                     original_message_id = task.get('message_id')
                     if original_message_id:
+                        # Отправляем ответ как reply к оригинальному сообщению
                         await self.bot.send_message(
                             chat_id=chat_id,
                             reply_to_message_id=int(original_message_id),
                             text=f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}",
                             parse_mode="HTML"
                         )
+                        logger.info(f"Sent direct reply to user {user_id} in chat {chat_id}")
                     else:
                         # Если нет ID оригинального сообщения, отправляем обычное сообщение
                         await self.bot.send_message(
@@ -678,8 +723,22 @@ class UserBot:
                             text=f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}",
                             parse_mode="HTML"
                         )
+                        logger.info(f"Sent direct message to user {user_id} in chat {chat_id}")
                 except Exception as e:
-                    logger.debug(f"Could not send direct reply to user: {e}")
+                    logger.error(f"Could not send direct reply to user: {e}")
+                    
+                # Если пересылка в тему не удалась, отправляем fallback сообщение в тему
+                if not forwarded_to_topic and topic_id and target_chat_id:
+                    try:
+                        await self.bot.send_message(
+                            chat_id=target_chat_id,
+                            message_thread_id=topic_id,
+                            text=f"💬 <b>Ответ от @{reply_author}:</b>\n\n{reply_text}",
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"Sent fallback message to user topic {topic_id} in chat {target_chat_id}")
+                    except Exception as e:
+                        logger.error(f"Failed to send fallback message to user topic: {e}")
                     
                 logger.info(f"Sent reply for task {task_id} to user {user_id}")
                 
