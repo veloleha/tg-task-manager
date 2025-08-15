@@ -86,3 +86,23 @@ dump.rdb
 # Temporary files
 *.tmp
 *.temp
+
+# Test files (not needed for production)
+test_*.py
+final_integration_test.py
+
+# Development and debugging files
+run_polling.py
+start_bots_polling.py
+stop_bots.py
+
+# Legacy and backup files
+*_old.py
+*_backup.py
+*.bak
+
+# Development scripts
+commands/
+
+# Documentation drafts
+docs/
