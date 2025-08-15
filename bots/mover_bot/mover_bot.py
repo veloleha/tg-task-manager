@@ -118,7 +118,8 @@ class MoverBot:
             if user_id in self.waiting_replies:
                 task_id = self.waiting_replies.pop(user_id)
                 logger.info(f"Received reply for task {task_id} from {message.from_user.username}")
-                await self._save_reply(task_id, message.text, message.from_user.username, message.message_id, message.chat.id)
+                # Передаём объект сообщения для обработки медиафайлов
+                await self._save_reply(task_id, message.text or message.caption or "", message.from_user.username, message.message_id, message.chat.id, message)
                 await message.reply("✅ Ответ сохранён и отправлен пользователю!")
                 await state.clear()
     
@@ -238,21 +239,36 @@ class MoverBot:
             logger.error(f"Ошибка при ответе на задачу: {e}")
             await callback.answer("Ошибка при ответе на задачу", show_alert=True)
     
-    async def _save_reply(self, task_id: str, reply_text: str, username: str, reply_message_id: int, reply_chat_id: int):
+    async def _save_reply(self, task_id: str, reply_text: str, username: str, reply_message_id: int, reply_chat_id: int, message=None):
         """Сохраняет ответ к задаче и уведомляет UserBot"""
         try:
             logger.info(f"Saving reply for task {task_id} from @{username}")
             
+            # Извлекаем медиаданные из сообщения
+            media_data = await self._extract_reply_media_data(message) if message else {}
+            
             # Сохраняем ответ в базе данных
-            await self.redis.update_task(
-                task_id,
-                reply=reply_text,
-                reply_author=username,
-                reply_at=datetime.now().isoformat()
-            )
+            update_data = {
+                "reply": reply_text,
+                "reply_author": username,
+                "reply_at": datetime.now().isoformat()
+            }
+            
+            # Добавляем медиаданные в ответ
+            if media_data:
+                update_data.update({
+                    "reply_has_photo": media_data.get("has_photo", False),
+                    "reply_has_video": media_data.get("has_video", False),
+                    "reply_has_document": media_data.get("has_document", False),
+                    "reply_photo_file_ids": media_data.get("photo_file_ids", []),
+                    "reply_video_file_id": media_data.get("video_file_id"),
+                    "reply_document_file_id": media_data.get("document_file_id")
+                })
+            
+            await self.redis.update_task(task_id, **update_data)
             
             # Отправляем событие UserBot для пересылки ответа пользователю
-            await redis_client.publish_event("task_updates", {
+            event_data = {
                 "type": "new_reply",
                 "task_id": task_id,
                 "reply_text": reply_text,
@@ -260,13 +276,236 @@ class MoverBot:
                 "reply_at": datetime.now().isoformat(),
                 "reply_message_id": reply_message_id,
                 "reply_chat_id": reply_chat_id
-            })
+            }
+            
+            # Добавляем медиаданные в событие
+            if media_data:
+                event_data.update(media_data)
+            
+            await redis_client.publish_event("task_updates", event_data)
             
             logger.info(f"Reply saved and event published for task {task_id}")
             
         except Exception as e:
             logger.error(f"Error saving reply for task {task_id}: {e}", exc_info=True)
     
+    async def _extract_reply_media_data(self, message) -> dict:
+        """Извлекает данные о медиафайлах из ответа поддержки"""
+        if not message:
+            return {}
+            
+        media_data = {
+            "has_photo": False,
+            "has_video": False,
+            "has_document": False,
+            "photo_file_ids": [],
+            "video_file_id": None,
+            "document_file_id": None,
+            "media_group_id": getattr(message, 'media_group_id', None)
+        }
+        
+        # Проверяем фото
+        if hasattr(message, 'photo') and message.photo:
+            media_data["has_photo"] = True
+            media_data["photo_file_ids"] = [photo.file_id for photo in message.photo]
+            logger.info(f"Found photo in reply message {message.message_id}, file_ids: {media_data['photo_file_ids']}")
+        
+        # Проверяем видео
+        if hasattr(message, 'video') and message.video:
+            media_data["has_video"] = True
+            media_data["video_file_id"] = message.video.file_id
+            logger.info(f"Found video in reply message {message.message_id}, file_id: {media_data['video_file_id']}")
+        
+        # Проверяем документы
+        if hasattr(message, 'document') and message.document:
+            media_data["has_document"] = True
+            media_data["document_file_id"] = message.document.file_id
+            logger.info(f"Found document in reply message {message.message_id}, file_id: {media_data['document_file_id']}")
+        
+        # Проверяем видео-заметки
+        if hasattr(message, 'video_note') and message.video_note:
+            media_data["has_video"] = True
+            media_data["video_file_id"] = message.video_note.file_id
+            logger.info(f"Found video note in reply message {message.message_id}, file_id: {media_data['video_file_id']}")
+        
+        # Проверяем анимации (GIF)
+        if hasattr(message, 'animation') and message.animation:
+            media_data["has_document"] = True
+            media_data["document_file_id"] = message.animation.file_id
+            logger.info(f"Found animation in reply message {message.message_id}, file_id: {media_data['document_file_id']}")
+        
+        return media_data
+
+    async def _send_task_with_media(self, task: dict, chat_id: int, topic_id: int, keyboard=None) -> int:
+        """Отправляет задачу с медиафайлами в тему"""
+        try:
+            # Формируем текст сообщения
+            msg_text = self._format_task_message(task)
+            
+            # Проверяем наличие медиафайлов
+            has_photo = task.get('has_photo', False)
+            has_video = task.get('has_video', False)
+            has_document = task.get('has_document', False)
+            
+            message = None
+            media_sent = False
+            
+            # Пытаемся переслать оригинальное сообщение с медиа, если есть информация о нем
+            original_chat_id = task.get('chat_id')
+            original_message_id = task.get('message_id')
+            
+            if (has_photo or has_video or has_document) and original_chat_id and original_message_id:
+                try:
+                    logger.info(f"Attempting to forward message {original_message_id} from chat {original_chat_id} to topic {topic_id}")
+                    
+                    # Пересылаем оригинальное сообщение с медиа
+                    forwarded_message = await self.bot.forward_message(
+                        chat_id=chat_id,
+                        from_chat_id=original_chat_id,
+                        message_id=original_message_id,
+                        message_thread_id=topic_id
+                    )
+                    
+                    logger.info(f"Successfully forwarded media message to topic {topic_id}")
+                    
+                    # Отправляем текст задачи отдельным сообщением с клавиатурой
+                    message = await self.bot.send_message(
+                        chat_id=chat_id,
+                        text=msg_text,
+                        message_thread_id=topic_id,
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
+                    )
+                    
+                    logger.info(f"Sent task with forwarded media to topic {topic_id} in chat {chat_id}")
+                    media_sent = True
+                    
+                except Exception as forward_error:
+                    logger.warning(f"Failed to forward media message: {forward_error}")
+                    # Продолжаем с fallback на текстовое сообщение
+            
+            # Пытаемся отправить фото по file_id, если медиа еще не отправлено
+            if not media_sent and has_photo and task.get('photo_file_ids'):
+                try:
+                    # Безопасное получение photo_file_ids
+                    photo_file_ids = task.get('photo_file_ids', [])
+                    
+                    # Проверяем, что это список, а не строка
+                    if isinstance(photo_file_ids, str):
+                        # Если это строка JSON, пытаемся распарсить
+                        try:
+                            import json
+                            photo_file_ids = json.loads(photo_file_ids)
+                        except:
+                            logger.warning(f"Could not parse photo_file_ids string: {photo_file_ids}")
+                            raise ValueError("Invalid photo_file_ids format")
+                    
+                    # Проверяем, что список не пустой
+                    if not photo_file_ids or not isinstance(photo_file_ids, list):
+                        logger.warning(f"Invalid photo_file_ids: {photo_file_ids}")
+                        raise ValueError("Invalid photo_file_ids")
+                    
+                    # Используем последний (наибольший) размер фото
+                    photo_file_id = photo_file_ids[-1]
+                    
+                    # Детальное логирование для диагностики
+                    logger.info(f"Photo file_ids list: {photo_file_ids}")
+                    logger.info(f"Selected photo_file_id: {photo_file_id}")
+                    logger.info(f"Photo file_id length: {len(photo_file_id)}")
+                    logger.info(f"Photo file_id type: {type(photo_file_id)}")
+                    
+                    # Проверяем валидность file_id
+                    if not photo_file_id or len(photo_file_id) < 10:
+                        logger.warning(f"Invalid photo file_id: {photo_file_id}")
+                        raise ValueError("Invalid photo file_id")
+                    
+                    # Проверяем, что file_id является строкой
+                    if not isinstance(photo_file_id, str):
+                        logger.warning(f"Photo file_id is not a string: {type(photo_file_id)}")
+                        raise ValueError("Photo file_id must be a string")
+                    
+                    message = await self.bot.send_photo(
+                        chat_id=chat_id,
+                        photo=photo_file_id,
+                        caption=msg_text,
+                        message_thread_id=topic_id,
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"Sent task with photo to topic {topic_id} in chat {chat_id}")
+                    media_sent = True
+                except Exception as photo_error:
+                    logger.warning(f"Failed to send photo (file_id: {task.get('photo_file_ids', [])}): {photo_error}")
+                    # Продолжаем с fallback на текстовое сообщение
+            
+            # Пытаемся отправить видео, если фото не отправилось
+            elif not media_sent and has_video and task.get('video_file_id'):
+                try:
+                    video_file_id = task['video_file_id']
+                    
+                    # Проверяем валидность file_id
+                    if not video_file_id or len(video_file_id) < 10:
+                        logger.warning(f"Invalid video file_id: {video_file_id}")
+                        raise ValueError("Invalid video file_id")
+                    
+                    message = await self.bot.send_video(
+                        chat_id=chat_id,
+                        video=video_file_id,
+                        caption=msg_text,
+                        message_thread_id=topic_id,
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"Sent task with video to topic {topic_id} in chat {chat_id}")
+                    media_sent = True
+                except Exception as video_error:
+                    logger.warning(f"Failed to send video (file_id: {task.get('video_file_id')}): {video_error}")
+                    # Продолжаем с fallback на текстовое сообщение
+            
+            # Пытаемся отправить документ, если медиа не отправилось
+            elif not media_sent and has_document and task.get('document_file_id'):
+                try:
+                    document_file_id = task['document_file_id']
+                    
+                    # Проверяем валидность file_id
+                    if not document_file_id or len(document_file_id) < 10:
+                        logger.warning(f"Invalid document file_id: {document_file_id}")
+                        raise ValueError("Invalid document file_id")
+                    
+                    message = await self.bot.send_document(
+                        chat_id=chat_id,
+                        document=document_file_id,
+                        caption=msg_text,
+                        message_thread_id=topic_id,
+                        reply_markup=keyboard,
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"Sent task with document to topic {topic_id} in chat {chat_id}")
+                    media_sent = True
+                except Exception as doc_error:
+                    logger.warning(f"Failed to send document (file_id: {task.get('document_file_id')}): {doc_error}")
+                    # Продолжаем с fallback на текстовое сообщение
+            
+            # Если медиа не отправилось или его нет, отправляем обычное сообщение
+            if not media_sent:
+                # Не добавляем информацию о медиа - пользователь не хочет видеть такие уведомления
+                # Оставляем только чистый текст задачи
+                
+                message = await self.bot.send_message(
+                    chat_id=chat_id,
+                    message_thread_id=topic_id,
+                    text=msg_text,
+                    reply_markup=keyboard,
+                    parse_mode="HTML"
+                )
+                logger.info(f"Sent task as text (media fallback) to topic {topic_id} in chat {chat_id}")
+            
+            return message.message_id if message else None
+                
+        except Exception as e:
+            logger.error(f"Failed to send task with media to topic {topic_id} in chat {chat_id}: {e}")
+            return None
+
     async def _handle_reopen_task(self, callback, task_id: str):
         """Обрабатывает нажатие кнопки 'Переоткрыть'"""
         try:
@@ -318,29 +557,28 @@ class MoverBot:
             # Получаем список исполнителей для клавиатуры
             executors = await self._get_chat_executors()
             
-            # Формируем текст сообщения
-            msg_text = self._format_task_message(task)
-            
             # Создаем клавиатуру с кнопками исполнителей
             keyboard = create_unreacted_topic_keyboard(task_id, executors)
             
-            # Отправляем сообщение в тему с клавиатурой
-            message = await self.bot.send_message(
+            # Отправляем задачу с медиафайлами в тему
+            message_id = await self._send_task_with_media(
+                task=task,
                 chat_id=settings.FORUM_CHAT_ID,
-                message_thread_id=topic_id,
-                text=msg_text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
+                topic_id=topic_id,
+                keyboard=keyboard
             )
             
+            if not message_id:
+                raise ValueError("Не удалось отправить задачу в тему")
+            
             # Создаем ссылку на сообщение в форумной теме
-            task_link = f"https://t.me/c/{str(abs(settings.FORUM_CHAT_ID))[4:]}/{topic_id}/{message.message_id}"
+            task_link = f"https://t.me/c/{str(abs(settings.FORUM_CHAT_ID))[4:]}/{topic_id}/{message_id}"
             
             # Обновляем данные задачи
             await redis_client.update_task(
                 task_id,
                 current_topic="unreacted",
-                support_message_id=message.message_id,
+                support_message_id=message_id,
                 support_topic_id=topic_id,
                 status="unreacted",
                 task_link=task_link
@@ -425,33 +663,32 @@ class MoverBot:
             if not topic_id:
                 raise ValueError(f"Не удалось получить ID темы исполнителя {executor}")
             
-            # Формируем текст сообщения
-            msg_text = self._format_task_message(task)
-            
             # Создаем клавиатуру для темы исполнителя
             keyboard = create_executor_topic_keyboard(task_id)
             
-            # Отправляем сообщение в тему с клавиатурой
-            message = await self.bot.send_message(
+            # Отправляем задачу с медиафайлами в тему
+            message_id = await self._send_task_with_media(
+                task=task,
                 chat_id=settings.FORUM_CHAT_ID,
-                message_thread_id=topic_id,
-                text=msg_text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
+                topic_id=topic_id,
+                keyboard=keyboard
             )
+            
+            if not message_id:
+                raise ValueError("Не удалось отправить задачу в тему исполнителя")
             
             # Получаем старый статус для обновления счетчиков
             old_status = task.get('status', 'unreacted')
             old_assignee = task.get('assignee')
             
             # Создаем ссылку на сообщение в форумной теме исполнителя
-            task_link = f"https://t.me/c/{str(abs(settings.FORUM_CHAT_ID))[4:]}/{topic_id}/{message.message_id}"
+            task_link = f"https://t.me/c/{str(abs(settings.FORUM_CHAT_ID))[4:]}/{topic_id}/{message_id}"
             
             # Обновляем данные задачи
             await redis_client.update_task(
                 task_id,
                 current_topic="executor",
-                support_message_id=message.message_id,
+                support_message_id=message_id,
                 support_topic_id=topic_id,
                 status="in_progress",
                 assignee=executor,
@@ -500,33 +737,32 @@ class MoverBot:
             if not topic_id:
                 raise ValueError("Не удалось получить ID темы 'завершённые'")
             
-            # Формируем текст сообщения
-            msg_text = self._format_task_message(task)
-            
             # Создаем клавиатуру для завершённых задач
             keyboard = create_completed_topic_keyboard(task_id)
             
-            # Отправляем сообщение в тему с клавиатурой
-            message = await self.bot.send_message(
+            # Отправляем задачу с медиафайлами в тему
+            message_id = await self._send_task_with_media(
+                task=task,
                 chat_id=settings.FORUM_CHAT_ID,
-                message_thread_id=topic_id,
-                text=msg_text,
-                reply_markup=keyboard,
-                parse_mode="HTML"
+                topic_id=topic_id,
+                keyboard=keyboard
             )
+            
+            if not message_id:
+                raise ValueError("Не удалось отправить задачу в тему завершённых")
             
             # Получаем старые данные для обновления счетчиков
             old_status = task.get('status', 'in_progress')
             old_assignee = task.get('assignee')
             
             # Создаем ссылку на сообщение в форумной теме завершенных
-            task_link = f"https://t.me/c/{str(abs(settings.FORUM_CHAT_ID))[4:]}/{topic_id}/{message.message_id}"
+            task_link = f"https://t.me/c/{str(abs(settings.FORUM_CHAT_ID))[4:]}/{topic_id}/{message_id}"
             
             # Обновляем данные задачи
             await redis_client.update_task(
                 task_id,
                 current_topic="completed",
-                support_message_id=message.message_id,
+                support_message_id=message_id,
                 support_topic_id=topic_id,
                 status="completed",
                 task_link=task_link
@@ -971,12 +1207,21 @@ class MoverBot:
             "in_progress": "⚡",
             "completed": "✅"
         }
+        
+        # Добавляем информацию об исполнителе
+        assignee = task.get('assignee')
+        assignee_part = f"\n👨‍💼 Исполнитель: @{assignee}" if assignee else ""
+        
+        # Не добавляем информацию о медиафайлах - пользователь не хочет видеть такие уведомления
+        media_info = ""
+        
         link_part = f'\n🔗 <a href="{main_chat_link}">Открыть в главном меню</a>' if main_chat_link else ""
+        
         return (
             f"{status_icons.get(task['status'], '📌')} <b>Задача #{task.get('task_number', 'N/A')}</b>\n"
             f"👤 От: @{task.get('username', 'N/A')}\n"
-            f"📝 Текст: {task.get('text', '')}\n"
-            f"🔄 Статус: {task.get('status', 'N/A')}" + link_part
+            f"📝 Текст: {task.get('text', '')}" + assignee_part + media_info +
+            f"\n🔄 Статус: {task.get('status', 'N/A')}" + link_part
         )
 
 

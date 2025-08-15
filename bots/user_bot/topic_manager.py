@@ -152,6 +152,24 @@ class TopicManager:
         except Exception as e:
             logger.error(f"Error saving topic data: {e}")
     
+    async def _delete_user_topic_cache(self, chat_id: int, user_id: int):
+        """Удаляет тему пользователя из кэша без закрытия"""
+        try:
+            topic_data = await self.redis.get(f"user_topic:{chat_id}:{user_id}")
+            if topic_data:
+                import json
+                data = json.loads(topic_data)
+                topic_id = data['topic_id']
+                
+                # Удаляем из Redis без закрытия темы
+                await self.redis.delete(f"user_topic:{chat_id}:{user_id}")
+                await self.redis.delete(f"topic_user:{chat_id}:{topic_id}")
+                
+                logger.info(f"Deleted cache for topic {topic_id} for user {user_id} in chat {chat_id}")
+                
+        except Exception as e:
+            logger.error(f"Error deleting topic cache for user {user_id} in chat {chat_id}: {e}")
+
     async def _close_user_topic(self, chat_id: int, user_id: int):
         """Закрывает тему пользователя"""
         try:

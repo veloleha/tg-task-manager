@@ -69,9 +69,19 @@ class RedisManager:
             # Подготавливаем данные для сохранения
             pipeline = self.conn.pipeline()
             
-            # Сохраняем как строку JSON
+            # Сохраняем как строку JSON с правильной обработкой списков и объектов
+            def serialize_value(value):
+                if value is None:
+                    return ""
+                elif isinstance(value, (list, dict)):
+                    # Списки и словари сохраняем как JSON
+                    return value
+                else:
+                    # Остальные значения конвертируем в строку
+                    return str(value)
+        
             task_json = json.dumps({
-                k: str(v) if v is not None else ""
+                k: serialize_value(v)
                 for k, v in task_data.items()
             })
             logger.info(f"[DB][SAVE_TASK] Task data serialized to JSON: {len(task_json)} chars")

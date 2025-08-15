@@ -490,3 +490,32 @@ AttributeError: 'RedisManager' object has no attribute 'load_task'
 2025-08-03 15:20:42,275 - core.redis_client - INFO - [DB][SAVE_TASK] Added SADD command to pipeline for index
 2025-08-03 15:20:42,276 - core.redis_client - INFO - [DB][SAVE_TASK] Pipeline executed successfully: [True, True, 1]
 2025-08-03 15:20:42,276 - core.redis_client - INFO - [DB][SAVE_TASK] ✅ Task saved with ID: a5639dbd-2e22-4269-82e4-81c34521ec07 (key: task:a5639dbd-2e22-4269-82e4-81c34521ec07)
+2025-08-10 22:54:53,211 - __main__ - INFO - 🚀 Запуск финального интеграционного тестирования...
+2025-08-10 22:54:53,243 - __main__ - INFO - 📝 Создание тестовой задачи от пользователя @integration_tester (ID: 123456789)
+2025-08-10 22:54:53,243 - core.redis_client - INFO - [DB][SAVE_TASK] Starting task save operation...
+2025-08-10 22:54:53,244 - core.redis_client - INFO - Establishing Redis connection
+2025-08-10 22:54:55,298 - core.redis_client - INFO - [DB][SAVE_TASK] Redis connection ensured
+2025-08-10 22:54:55,298 - core.redis_client - INFO - [DB][SAVE_TASK] Generated task ID: 62025774-a4d7-44c5-8c7d-4434bf1e70a4, key: task:62025774-a4d7-44c5-8c7d-4434bf1e70a4
+2025-08-10 22:54:55,298 - core.redis_client - INFO - [DB][SAVE_TASK] Task data serialized to JSON: 675 chars
+2025-08-10 22:54:55,298 - core.redis_client - INFO - [DB][SAVE_TASK] Added SET and EXPIRE commands to pipeline
+2025-08-10 22:54:55,298 - core.redis_client - INFO - [DB][SAVE_TASK] Added SADD command to pipeline for index
+2025-08-10 22:54:55,299 - core.redis_client - INFO - [DB][SAVE_TASK] Pipeline executed successfully: [True, True, 1]
+2025-08-10 22:54:55,299 - core.redis_client - INFO - [DB][SAVE_TASK] ✅ Task saved with ID: 62025774-a4d7-44c5-8c7d-4434bf1e70a4 (key: task:62025774-a4d7-44c5-8c7d-4434bf1e70a4)
+2025-08-10 22:54:55,299 - __main__ - INFO - ✅ Задача 62025774-a4d7-44c5-8c7d-4434bf1e70a4 создана в Redis
+2025-08-10 22:54:55,299 - core.redis_client - INFO - [USERBOT][STEP 2] Published event to new_tasks: {'type': 'new_task', 'task_id': '62025774-a4d7-44c5-8c7d-4434bf1e70a4'}
+2025-08-10 22:54:55,300 - __main__ - INFO - 📢 Событие о новой задаче 62025774-a4d7-44c5-8c7d-4434bf1e70a4 опубликовано в PubSub
+2025-08-10 22:54:57,304 - __main__ - INFO - ✅ Задача 62025774-a4d7-44c5-8c7d-4434bf1e70a4 найдена в Redis
+2025-08-10 22:54:57,305 - __main__ - INFO - 🔄 Изменение статуса задачи 62025774-a4d7-44c5-8c7d-4434bf1e70a4 на 'in_progress'
+2025-08-10 22:54:57,306 - __main__ - INFO - ✅ Статус задачи 62025774-a4d7-44c5-8c7d-4434bf1e70a4 обновлен в Redis
+2025-08-10 22:54:57,306 - core.redis_client - INFO - [USERBOT][STEP 2] Published event to task_updates: {'type': 'status_change', 'task_id': '62025774-a4d7-44c5-8c7d-4434bf1e70a4', 'new_status': 'in_progress', 'changed_by': 'integration_tester'}
+2025-08-10 22:54:57,307 - __main__ - INFO - 📢 Событие об изменении статуса задачи 62025774-a4d7-44c5-8c7d-4434bf1e70a4 опубликовано в PubSub
+2025-08-10 22:54:59,312 - __main__ - INFO - ✅ Статус задачи 62025774-a4d7-44c5-8c7d-4434bf1e70a4 успешно изменен на 'in_progress'
+2025-08-10 22:54:59,312 - __main__ - INFO - ✅ Исполнитель задачи: integration_tester
+2025-08-10 22:54:59,313 - __main__ - INFO - ✅ MoverBot должен был получить событие и обновить статистику
+2025-08-10 22:54:59,313 - __main__ - INFO - 🎉 Финальное интеграционное тестирование успешно завершено!
+2025-08-10 22:54:59,313 - __main__ - INFO - ✅ Все компоненты системы работают корректно:
+2025-08-10 22:54:59,313 - __main__ - INFO -    - UserBot создает задачи и публикует события
+2025-08-10 22:54:59,313 - __main__ - INFO -    - TaskBot получает события и обновляет задачи
+2025-08-10 22:54:59,313 - __main__ - INFO -    - MoverBot получает события и обновляет статистику
+2025-08-10 22:54:59,313 - __main__ - INFO -    - Redis корректно хранит и обновляет данные
+2025-08-10 22:54:59,313 - __main__ - INFO -    - PubSub обеспечивает передачу событий между компонентами
