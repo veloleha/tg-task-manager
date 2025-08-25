@@ -297,3 +297,31 @@ connector: <aiohttp.connector.TCPConnector object at 0x000002A07473E090>
 2025-08-03 19:39:44,069 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
 2025-08-03 19:39:44,070 - aiogram.dispatcher - WARNING - Sleep for 5.019810 seconds and try again... (tryings = 10, bot id = 8193252464)
 2025-08-03 19:39:59,146 - aiogram.dispatcher - INFO - Connection established (tryings = 11, bot id = 8193252464)
+2025-08-26 01:34:29,595 - __main__ - INFO - [TASKBOT][STEP 1] Starting TaskBot...
+2025-08-26 01:34:29,597 - __main__ - INFO - [TASKBOT][STEP 1.1] Subscribing to new_tasks channel...
+2025-08-26 01:34:29,597 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-08-26 01:34:29,597 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-08-26 01:34:29,597 - core.redis_client - INFO - Calling Redis connect method
+2025-08-26 01:34:29,597 - core.redis_client - INFO - Establishing Redis connection
+2025-08-26 01:34:31,641 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-26 01:34:31,641 - __main__ - INFO - [TASKBOT][STEP 1.2] Subscribing to task_updates channel...
+2025-08-26 01:34:31,641 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: task_updates
+2025-08-26 01:34:31,642 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: task_updates
+2025-08-26 01:34:31,642 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-26 01:34:31,642 - __main__ - INFO - [TASKBOT][STEP 1.3] TaskBot subscribed to 'new_tasks' and 'task_updates' channels
+2025-08-26 01:34:31,642 - __main__ - INFO - [TASKBOT][STEP 1.4] Starting PubSub listener...
+2025-08-26 01:34:31,642 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-08-26 01:34:31,642 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-26 01:34:31,643 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-26 01:34:31,643 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-08-26 01:34:31,643 - __main__ - INFO - [TASKBOT][STEP 1.5] PubSub listener started, starting polling...
+2025-08-26 01:34:31,643 - aiogram.dispatcher - INFO - Start polling
+2025-08-26 01:34:31,643 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-08-26 01:34:31,764 - aiogram.dispatcher - INFO - Run polling for bot @yourtaskmngr_bot id=8193252464 - 'task_bot'
+2025-08-26 01:37:36,985 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:37:36,985 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8193252464)
+2025-08-26 01:37:42,091 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:37:42,091 - aiogram.dispatcher - WARNING - Sleep for 1.128276 seconds and try again... (tryings = 1, bot id = 8193252464)
+2025-08-26 01:37:47,699 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:37:47,699 - aiogram.dispatcher - WARNING - Sleep for 1.498773 seconds and try again... (tryings = 2, bot id = 8193252464)
+2025-08-26 01:37:59,245 - aiogram.dispatcher - INFO - Connection established (tryings = 3, bot id = 8193252464)

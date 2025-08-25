@@ -519,3 +519,306 @@ AttributeError: 'RedisManager' object has no attribute 'load_task'
 2025-08-10 22:54:59,313 - __main__ - INFO -    - MoverBot получает события и обновляет статистику
 2025-08-10 22:54:59,313 - __main__ - INFO -    - Redis корректно хранит и обновляет данные
 2025-08-10 22:54:59,313 - __main__ - INFO -    - PubSub обеспечивает передачу событий между компонентами
+2025-08-18 02:00:32,643 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0] Starting UserBot in polling mode...
+2025-08-18 02:00:32,645 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.0] Connecting to Redis...
+2025-08-18 02:00:32,645 - core.redis_client - INFO - Calling Redis connect method
+2025-08-18 02:00:32,646 - core.redis_client - INFO - Establishing Redis connection
+2025-08-18 02:00:32,647 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1] Starting TaskBot...
+2025-08-18 02:00:32,647 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.1] Subscribing to new_tasks channel...
+2025-08-18 02:00:32,647 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-08-18 02:00:32,648 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-08-18 02:00:32,648 - core.redis_client - INFO - Calling Redis connect method
+2025-08-18 02:00:32,648 - core.redis_client - INFO - Establishing Redis connection
+2025-08-18 02:00:32,804 - core.pubsub_manager.MoverBot - INFO - Subscribed to channel: task_updates
+2025-08-18 02:00:32,804 - core.pubsub_manager.MoverBot - INFO - Starting background listeners for channels: ['task_updates']
+2025-08-18 02:00:32,804 - core.pubsub_manager.MoverBot - INFO - Started listener for channel: task_updates
+2025-08-18 02:00:32,804 - core.pubsub_manager.MoverBot - INFO - All 1 listeners started successfully
+2025-08-18 02:00:32,804 - bots.mover_bot.mover_bot - INFO - MoverBot успешно запущен
+2025-08-18 02:00:32,804 - aiogram.dispatcher - INFO - Start polling
+2025-08-18 02:00:32,805 - core.pubsub_manager.MoverBot - INFO - Starting safe listener for channel: task_updates
+2025-08-18 02:00:32,837 - aiogram.dispatcher - INFO - Run polling for bot @movet_task_bot id=8053281209 - 'mover_bot'
+2025-08-18 02:00:34,711 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.0] Redis connection established
+2025-08-18 02:00:34,711 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.1] Subscribing to PubSub channels...
+2025-08-18 02:00:34,711 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: health_check
+2025-08-18 02:00:34,711 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: task_updates
+2025-08-18 02:00:34,711 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.2] Subscriptions completed
+2025-08-18 02:00:34,711 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.3] Starting PubSub listener...
+2025-08-18 02:00:34,711 - core.pubsub_manager.UserBot - INFO - Starting background listeners for channels: ['health_check', 'task_updates']
+2025-08-18 02:00:34,711 - core.pubsub_manager.UserBot - INFO - Started listener for channel: health_check
+2025-08-18 02:00:34,711 - core.pubsub_manager.UserBot - INFO - Started listener for channel: task_updates
+2025-08-18 02:00:34,711 - core.pubsub_manager.UserBot - INFO - All 2 listeners started successfully
+2025-08-18 02:00:34,711 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.4] PubSub listener started
+2025-08-18 02:00:34,711 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.5] Starting polling...
+2025-08-18 02:00:34,711 - aiogram.dispatcher - INFO - Start polling
+2025-08-18 02:00:34,712 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: health_check
+2025-08-18 02:00:34,712 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: task_updates
+2025-08-18 02:00:34,714 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-18 02:00:34,714 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.2] Subscribing to task_updates channel...
+2025-08-18 02:00:34,714 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: task_updates
+2025-08-18 02:00:34,714 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: task_updates
+2025-08-18 02:00:34,714 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-18 02:00:34,715 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.3] TaskBot subscribed to 'new_tasks' and 'task_updates' channels
+2025-08-18 02:00:34,715 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.4] Starting PubSub listener...
+2025-08-18 02:00:34,715 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-08-18 02:00:34,715 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-18 02:00:34,715 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-18 02:00:34,715 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-08-18 02:00:34,715 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.5] PubSub listener started, starting polling...
+2025-08-18 02:00:34,715 - aiogram.dispatcher - INFO - Start polling
+2025-08-18 02:00:34,715 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-08-18 02:00:34,796 - aiogram.dispatcher - INFO - Run polling for bot @yourtaskmngr_bot id=8193252464 - 'task_bot'
+2025-08-18 02:00:34,809 - aiogram.dispatcher - INFO - Run polling for bot @DiskStatus_Bot id=7373455502 - 'TaskMngr'
+2025-08-18 02:00:34,846 - core.pubsub_manager.MoverBot - INFO - Subscribed to task_updates, waiting for messages...
+2025-08-18 02:00:36,764 - core.pubsub_manager.UserBot - INFO - Subscribed to health_check, waiting for messages...
+2025-08-18 02:00:36,765 - core.pubsub_manager.UserBot - INFO - Subscribed to task_updates, waiting for messages...
+2025-08-18 02:00:36,779 - bots.mover_bot.mover_bot - INFO - 📊 Redis: {'unreacted': 6, 'in_progress': 0, 'completed': 44, 'executors': {'whatfqs': ExecutorStats(username='whatfqs', in_progress=0, completed=1, completed_today=0, completed_week=0, completed_month=1), 'FloydRose': ExecutorStats(username='FloydRose', in_progress=0, completed=43, completed_today=4, completed_week=4, completed_month=43), 'SKSQI': ExecutorStats(username='SKSQI', in_progress=0, completed=3, completed_today=0, completed_week=0, completed_month=3), 'alexanykey7': ExecutorStats(username='alexanykey7', in_progress=0, completed=6, completed_today=0, completed_week=0, completed_month=6)}}
+2025-08-18 02:03:34,014 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test'}
+2025-08-18 02:03:34,017 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test_subscription'}
+2025-08-18 02:03:38,049 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:03:38,049 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 7373455502)
+2025-08-18 02:03:38,057 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:03:38,057 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8193252464)
+2025-08-18 02:03:40,017 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:03:40,017 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8053281209)
+2025-08-18 02:03:43,152 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:03:43,152 - aiogram.dispatcher - WARNING - Sleep for 1.355119 seconds and try again... (tryings = 1, bot id = 8193252464)
+2025-08-18 02:03:43,160 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:03:43,160 - aiogram.dispatcher - WARNING - Sleep for 1.118755 seconds and try again... (tryings = 1, bot id = 7373455502)
+2025-08-18 02:03:45,105 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:03:45,105 - aiogram.dispatcher - WARNING - Sleep for 1.465827 seconds and try again... (tryings = 1, bot id = 8053281209)
+2025-08-18 02:03:48,696 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:03:48,696 - aiogram.dispatcher - WARNING - Sleep for 1.307264 seconds and try again... (tryings = 2, bot id = 7373455502)
+2025-08-18 02:03:48,831 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:03:48,831 - aiogram.dispatcher - WARNING - Sleep for 1.855320 seconds and try again... (tryings = 2, bot id = 8193252464)
+2025-08-18 02:03:50,896 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:03:50,896 - aiogram.dispatcher - WARNING - Sleep for 1.942497 seconds and try again... (tryings = 2, bot id = 8053281209)
+2025-08-18 02:04:00,029 - aiogram.dispatcher - INFO - Connection established (tryings = 3, bot id = 7373455502)
+2025-08-18 02:11:56,412 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0] Starting UserBot in polling mode...
+2025-08-18 02:11:56,414 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.0] Connecting to Redis...
+2025-08-18 02:11:56,415 - core.redis_client - INFO - Calling Redis connect method
+2025-08-18 02:11:56,415 - core.redis_client - INFO - Establishing Redis connection
+2025-08-18 02:11:56,417 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1] Starting TaskBot...
+2025-08-18 02:11:56,417 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.1] Subscribing to new_tasks channel...
+2025-08-18 02:11:56,417 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: new_tasks
+2025-08-18 02:11:56,417 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: new_tasks
+2025-08-18 02:11:56,417 - core.redis_client - INFO - Calling Redis connect method
+2025-08-18 02:11:56,418 - core.redis_client - INFO - Establishing Redis connection
+2025-08-18 02:11:56,754 - core.pubsub_manager.MoverBot - INFO - Subscribed to channel: task_updates
+2025-08-18 02:11:56,754 - core.pubsub_manager.MoverBot - INFO - Starting background listeners for channels: ['task_updates']
+2025-08-18 02:11:56,755 - core.pubsub_manager.MoverBot - INFO - Started listener for channel: task_updates
+2025-08-18 02:11:56,755 - core.pubsub_manager.MoverBot - INFO - All 1 listeners started successfully
+2025-08-18 02:11:56,755 - bots.mover_bot.mover_bot - INFO - MoverBot успешно запущен
+2025-08-18 02:11:56,755 - aiogram.dispatcher - INFO - Start polling
+2025-08-18 02:11:56,755 - core.pubsub_manager.MoverBot - INFO - Starting safe listener for channel: task_updates
+2025-08-18 02:11:56,800 - aiogram.dispatcher - INFO - Run polling for bot @movet_task_bot id=8053281209 - 'mover_bot'
+2025-08-18 02:11:58,476 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.0] Redis connection established
+2025-08-18 02:11:58,476 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.1] Subscribing to PubSub channels...
+2025-08-18 02:11:58,476 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: health_check
+2025-08-18 02:11:58,476 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: task_updates
+2025-08-18 02:11:58,476 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.2] Subscriptions completed
+2025-08-18 02:11:58,476 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.3] Starting PubSub listener...
+2025-08-18 02:11:58,476 - core.pubsub_manager.UserBot - INFO - Starting background listeners for channels: ['health_check', 'task_updates']
+2025-08-18 02:11:58,476 - core.pubsub_manager.UserBot - INFO - Started listener for channel: health_check
+2025-08-18 02:11:58,476 - core.pubsub_manager.UserBot - INFO - Started listener for channel: task_updates
+2025-08-18 02:11:58,476 - core.pubsub_manager.UserBot - INFO - All 2 listeners started successfully
+2025-08-18 02:11:58,476 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.4] PubSub listener started
+2025-08-18 02:11:58,477 - bots.user_bot.user_bot - INFO - [USERBOT][STEP 0.5] Starting polling...
+2025-08-18 02:11:58,477 - aiogram.dispatcher - INFO - Start polling
+2025-08-18 02:11:58,477 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: health_check
+2025-08-18 02:11:58,477 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: task_updates
+2025-08-18 02:11:58,478 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-18 02:11:58,478 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.2] Subscribing to task_updates channel...
+2025-08-18 02:11:58,478 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Attempting to subscribe to channel: task_updates
+2025-08-18 02:11:58,478 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Added handler for channel: task_updates
+2025-08-18 02:11:58,479 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-18 02:11:58,479 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.3] TaskBot subscribed to 'new_tasks' and 'task_updates' channels
+2025-08-18 02:11:58,479 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.4] Starting PubSub listener...
+2025-08-18 02:11:58,479 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Starting PubSub listener...
+2025-08-18 02:11:58,480 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: new_tasks
+2025-08-18 02:11:58,480 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] Subscribed to channel: task_updates
+2025-08-18 02:11:58,480 - bots.task_bot.pubsub_manager - INFO - [PUBSUB] PubSub listener started
+2025-08-18 02:11:58,480 - bots.task_bot.task_bot - INFO - [TASKBOT][STEP 1.5] PubSub listener started, starting polling...
+2025-08-18 02:11:58,480 - aiogram.dispatcher - INFO - Start polling
+2025-08-18 02:11:58,480 - bots.task_bot.pubsub_manager - INFO - PubSub listener started
+2025-08-18 02:11:58,571 - aiogram.dispatcher - INFO - Run polling for bot @yourtaskmngr_bot id=8193252464 - 'task_bot'
+2025-08-18 02:11:58,596 - aiogram.dispatcher - INFO - Run polling for bot @DiskStatus_Bot id=7373455502 - 'TaskMngr'
+2025-08-18 02:11:58,801 - core.pubsub_manager.MoverBot - INFO - Subscribed to task_updates, waiting for messages...
+2025-08-18 02:12:00,530 - core.pubsub_manager.UserBot - INFO - Subscribed to health_check, waiting for messages...
+2025-08-18 02:12:00,530 - core.pubsub_manager.UserBot - INFO - Subscribed to task_updates, waiting for messages...
+2025-08-18 02:12:00,548 - bots.mover_bot.mover_bot - INFO - 📊 Redis: {'unreacted': 4, 'in_progress': 0, 'completed': 44, 'executors': {'whatfqs': ExecutorStats(username='whatfqs', in_progress=0, completed=1, completed_today=0, completed_week=0, completed_month=1), 'alexanykey7': ExecutorStats(username='alexanykey7', in_progress=0, completed=6, completed_today=0, completed_week=0, completed_month=6), 'FloydRose': ExecutorStats(username='FloydRose', in_progress=0, completed=43, completed_today=4, completed_week=4, completed_month=43), 'SKSQI': ExecutorStats(username='SKSQI', in_progress=0, completed=3, completed_today=0, completed_week=0, completed_month=3)}}
+2025-08-18 02:16:10,382 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test'}
+2025-08-18 02:16:10,384 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test_subscription'}
+2025-08-18 02:16:14,387 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:14,387 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 7373455502)
+2025-08-18 02:16:14,410 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:14,410 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8193252464)
+2025-08-18 02:16:16,384 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:16,384 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 8053281209)
+2025-08-18 02:16:19,492 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:19,492 - aiogram.dispatcher - WARNING - Sleep for 1.271464 seconds and try again... (tryings = 1, bot id = 7373455502)
+2025-08-18 02:16:19,504 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:19,504 - aiogram.dispatcher - WARNING - Sleep for 1.374154 seconds and try again... (tryings = 1, bot id = 8193252464)
+2025-08-18 02:16:21,483 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:21,483 - aiogram.dispatcher - WARNING - Sleep for 1.432252 seconds and try again... (tryings = 1, bot id = 8053281209)
+2025-08-18 02:16:25,235 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:25,235 - aiogram.dispatcher - WARNING - Sleep for 1.772912 seconds and try again... (tryings = 2, bot id = 8193252464)
+2025-08-18 02:16:25,264 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:25,264 - aiogram.dispatcher - WARNING - Sleep for 1.585656 seconds and try again... (tryings = 2, bot id = 7373455502)
+2025-08-18 02:16:27,414 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:27,414 - aiogram.dispatcher - WARNING - Sleep for 1.831862 seconds and try again... (tryings = 2, bot id = 8053281209)
+2025-08-18 02:16:31,584 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:31,584 - aiogram.dispatcher - WARNING - Sleep for 2.361310 seconds and try again... (tryings = 3, bot id = 8193252464)
+2025-08-18 02:16:31,861 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:31,861 - aiogram.dispatcher - WARNING - Sleep for 2.190606 seconds and try again... (tryings = 3, bot id = 7373455502)
+2025-08-18 02:16:34,126 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:34,126 - aiogram.dispatcher - WARNING - Sleep for 2.331684 seconds and try again... (tryings = 3, bot id = 8053281209)
+2025-08-18 02:16:38,868 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:38,869 - aiogram.dispatcher - WARNING - Sleep for 3.225153 seconds and try again... (tryings = 4, bot id = 8193252464)
+2025-08-18 02:16:39,595 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:39,596 - aiogram.dispatcher - WARNING - Sleep for 2.903965 seconds and try again... (tryings = 4, bot id = 7373455502)
+2025-08-18 02:16:41,897 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:41,897 - aiogram.dispatcher - WARNING - Sleep for 3.009088 seconds and try again... (tryings = 4, bot id = 8053281209)
+2025-08-18 02:16:47,609 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:47,609 - aiogram.dispatcher - WARNING - Sleep for 4.198700 seconds and try again... (tryings = 5, bot id = 8193252464)
+2025-08-18 02:16:48,096 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:48,096 - aiogram.dispatcher - WARNING - Sleep for 3.984578 seconds and try again... (tryings = 5, bot id = 8053281209)
+2025-08-18 02:16:48,736 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:48,736 - aiogram.dispatcher - WARNING - Sleep for 3.733350 seconds and try again... (tryings = 5, bot id = 7373455502)
+2025-08-18 02:16:54,899 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:54,899 - aiogram.dispatcher - WARNING - Sleep for 5.104314 seconds and try again... (tryings = 6, bot id = 8193252464)
+2025-08-18 02:16:56,236 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-18 02:16:56,236 - aiogram.dispatcher - WARNING - Sleep for 4.992596 seconds and try again... (tryings = 6, bot id = 8053281209)
+2025-08-20 23:33:38,686 - __main__ - INFO - [USERBOT][STEP 0] Starting UserBot in polling mode...
+2025-08-20 23:33:38,688 - __main__ - INFO - [USERBOT][STEP 0.0] Connecting to Redis...
+2025-08-20 23:33:38,688 - core.redis_client - INFO - Calling Redis connect method
+2025-08-20 23:33:38,688 - core.redis_client - INFO - Establishing Redis connection
+2025-08-20 23:33:40,738 - __main__ - INFO - [USERBOT][STEP 0.0] Redis connection established
+2025-08-20 23:33:40,738 - __main__ - INFO - [USERBOT][STEP 0.1] Subscribing to PubSub channels...
+2025-08-20 23:33:40,739 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: health_check
+2025-08-20 23:33:40,739 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: task_updates
+2025-08-20 23:33:40,739 - __main__ - INFO - [USERBOT][STEP 0.2] Subscriptions completed
+2025-08-20 23:33:40,739 - __main__ - INFO - [USERBOT][STEP 0.3] Starting PubSub listener...
+2025-08-20 23:33:40,739 - core.pubsub_manager.UserBot - INFO - Starting background listeners for channels: ['health_check', 'task_updates']
+2025-08-20 23:33:40,739 - core.pubsub_manager.UserBot - INFO - Started listener for channel: health_check
+2025-08-20 23:33:40,739 - core.pubsub_manager.UserBot - INFO - Started listener for channel: task_updates
+2025-08-20 23:33:40,739 - core.pubsub_manager.UserBot - INFO - All 2 listeners started successfully
+2025-08-20 23:33:40,739 - __main__ - INFO - [USERBOT][STEP 0.4] PubSub listener started
+2025-08-20 23:33:40,739 - __main__ - INFO - [USERBOT][STEP 0.5] Starting polling...
+2025-08-20 23:33:40,739 - aiogram.dispatcher - INFO - Start polling
+2025-08-20 23:33:40,739 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: health_check
+2025-08-20 23:33:40,740 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: task_updates
+2025-08-20 23:33:40,740 - __main__ - INFO - Starting PubSub listener...
+2025-08-20 23:33:40,740 - core.pubsub_manager.UserBot - WARNING - Background listeners already running
+2025-08-20 23:33:40,826 - aiogram.dispatcher - INFO - Run polling for bot @DiskStatus_Bot id=7373455502 - 'TaskMngr'
+2025-08-20 23:33:42,769 - core.pubsub_manager.UserBot - INFO - Subscribed to health_check, waiting for messages...
+2025-08-20 23:33:42,769 - core.pubsub_manager.UserBot - INFO - Subscribed to task_updates, waiting for messages...
+2025-08-20 23:42:33,718 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test'}
+2025-08-20 23:42:33,720 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test_subscription'}
+2025-08-20 23:42:37,790 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-20 23:42:37,790 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 7373455502)
+2025-08-20 23:42:42,875 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-20 23:42:42,875 - aiogram.dispatcher - WARNING - Sleep for 1.400132 seconds and try again... (tryings = 1, bot id = 7373455502)
+2025-08-20 23:42:54,312 - aiogram.dispatcher - INFO - Connection established (tryings = 2, bot id = 7373455502)
+2025-08-26 01:33:53,326 - __main__ - INFO - [USERBOT][STEP 0] Starting UserBot in polling mode...
+2025-08-26 01:33:53,328 - __main__ - INFO - [USERBOT][STEP 0.0] Connecting to Redis...
+2025-08-26 01:33:53,329 - core.redis_client - INFO - Calling Redis connect method
+2025-08-26 01:33:53,329 - core.redis_client - INFO - Establishing Redis connection
+2025-08-26 01:33:55,376 - __main__ - INFO - [USERBOT][STEP 0.0] Redis connection established
+2025-08-26 01:33:55,376 - __main__ - INFO - [USERBOT][STEP 0.1] Subscribing to PubSub channels...
+2025-08-26 01:33:55,376 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: health_check
+2025-08-26 01:33:55,376 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: task_updates
+2025-08-26 01:33:55,376 - __main__ - INFO - [USERBOT][STEP 0.2] Subscriptions completed
+2025-08-26 01:33:55,376 - __main__ - INFO - [USERBOT][STEP 0.3] Starting PubSub listener...
+2025-08-26 01:33:55,376 - core.pubsub_manager.UserBot - INFO - Starting background listeners for channels: ['health_check', 'task_updates']
+2025-08-26 01:33:55,376 - core.pubsub_manager.UserBot - INFO - Started listener for channel: health_check
+2025-08-26 01:33:55,376 - core.pubsub_manager.UserBot - INFO - Started listener for channel: task_updates
+2025-08-26 01:33:55,376 - core.pubsub_manager.UserBot - INFO - All 2 listeners started successfully
+2025-08-26 01:33:55,376 - __main__ - INFO - [USERBOT][STEP 0.4] PubSub listener started
+2025-08-26 01:33:55,376 - __main__ - INFO - [USERBOT][STEP 0.5] Starting polling...
+2025-08-26 01:33:55,377 - aiogram.dispatcher - INFO - Start polling
+2025-08-26 01:33:55,377 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: health_check
+2025-08-26 01:33:55,377 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: task_updates
+2025-08-26 01:33:55,377 - __main__ - INFO - Starting PubSub listener...
+2025-08-26 01:33:55,378 - core.pubsub_manager.UserBot - WARNING - Background listeners already running
+2025-08-26 01:33:55,512 - aiogram.dispatcher - INFO - Run polling for bot @DiskStatus_Bot id=7373455502 - 'TaskMngr'
+2025-08-26 01:33:57,421 - core.pubsub_manager.UserBot - INFO - Subscribed to task_updates, waiting for messages...
+2025-08-26 01:33:57,421 - core.pubsub_manager.UserBot - INFO - Subscribed to health_check, waiting for messages...
+2025-08-26 01:37:32,921 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test'}
+2025-08-26 01:37:32,923 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test_subscription'}
+2025-08-26 01:37:36,978 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:37:36,979 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 7373455502)
+2025-08-26 01:37:42,091 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:37:42,091 - aiogram.dispatcher - WARNING - Sleep for 1.339154 seconds and try again... (tryings = 1, bot id = 7373455502)
+2025-08-26 01:37:47,824 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:37:47,825 - aiogram.dispatcher - WARNING - Sleep for 1.832440 seconds and try again... (tryings = 2, bot id = 7373455502)
+2025-08-26 01:37:59,711 - aiogram.dispatcher - INFO - Connection established (tryings = 3, bot id = 7373455502)
+2025-08-26 01:55:34,359 - __main__ - INFO - [USERBOT][STEP 0] Starting UserBot in polling mode...
+2025-08-26 01:55:34,361 - __main__ - INFO - [USERBOT][STEP 0.0] Connecting to Redis...
+2025-08-26 01:55:34,361 - core.redis_client - INFO - Calling Redis connect method
+2025-08-26 01:55:34,361 - core.redis_client - INFO - Establishing Redis connection
+2025-08-26 01:55:36,406 - __main__ - INFO - [USERBOT][STEP 0.0] Redis connection established
+2025-08-26 01:55:36,406 - __main__ - INFO - [USERBOT][STEP 0.1] Subscribing to PubSub channels...
+2025-08-26 01:55:36,406 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: health_check
+2025-08-26 01:55:36,406 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: task_updates
+2025-08-26 01:55:36,406 - __main__ - INFO - [USERBOT][STEP 0.2] Subscriptions completed
+2025-08-26 01:55:36,406 - __main__ - INFO - [USERBOT][STEP 0.3] Starting PubSub listener...
+2025-08-26 01:55:36,406 - core.pubsub_manager.UserBot - INFO - Starting background listeners for channels: ['health_check', 'task_updates']
+2025-08-26 01:55:36,406 - core.pubsub_manager.UserBot - INFO - Started listener for channel: health_check
+2025-08-26 01:55:36,406 - core.pubsub_manager.UserBot - INFO - Started listener for channel: task_updates
+2025-08-26 01:55:36,406 - core.pubsub_manager.UserBot - INFO - All 2 listeners started successfully
+2025-08-26 01:55:36,406 - __main__ - INFO - [USERBOT][STEP 0.4] PubSub listener started
+2025-08-26 01:55:36,406 - __main__ - INFO - [USERBOT][STEP 0.5] Starting polling...
+2025-08-26 01:55:36,406 - aiogram.dispatcher - INFO - Start polling
+2025-08-26 01:55:36,407 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: health_check
+2025-08-26 01:55:36,407 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: task_updates
+2025-08-26 01:55:36,407 - __main__ - INFO - Starting PubSub listener...
+2025-08-26 01:55:36,407 - core.pubsub_manager.UserBot - WARNING - Background listeners already running
+2025-08-26 01:55:36,507 - aiogram.dispatcher - INFO - Run polling for bot @DiskStatus_Bot id=7373455502 - 'TaskMngr'
+2025-08-26 01:55:38,448 - core.pubsub_manager.UserBot - INFO - Subscribed to task_updates, waiting for messages...
+2025-08-26 01:55:38,448 - core.pubsub_manager.UserBot - INFO - Subscribed to health_check, waiting for messages...
+2025-08-26 01:55:40,592 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:55:40,593 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 7373455502)
+2025-08-26 01:55:45,882 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:55:45,882 - aiogram.dispatcher - WARNING - Sleep for 1.393974 seconds and try again... (tryings = 1, bot id = 7373455502)
+2025-08-26 01:55:51,784 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:55:51,784 - aiogram.dispatcher - WARNING - Sleep for 1.727687 seconds and try again... (tryings = 2, bot id = 7373455502)
+2025-08-26 01:55:58,399 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:55:58,399 - aiogram.dispatcher - WARNING - Sleep for 2.151850 seconds and try again... (tryings = 3, bot id = 7373455502)
+2025-08-26 01:56:05,859 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:56:05,859 - aiogram.dispatcher - WARNING - Sleep for 2.802728 seconds and try again... (tryings = 4, bot id = 7373455502)
+2025-08-26 01:56:14,588 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:56:14,588 - aiogram.dispatcher - WARNING - Sleep for 3.430081 seconds and try again... (tryings = 5, bot id = 7373455502)
+2025-08-26 01:56:21,842 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:56:21,842 - aiogram.dispatcher - WARNING - Sleep for 4.484951 seconds and try again... (tryings = 6, bot id = 7373455502)
+2025-08-26 01:56:31,432 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:56:31,432 - aiogram.dispatcher - WARNING - Sleep for 4.962441 seconds and try again... (tryings = 7, bot id = 7373455502)
+2025-08-26 01:56:40,008 - __main__ - INFO - [USERBOT][STEP 0] Starting UserBot in polling mode...
+2025-08-26 01:56:40,009 - __main__ - INFO - [USERBOT][STEP 0.0] Connecting to Redis...
+2025-08-26 01:56:40,009 - core.redis_client - INFO - Calling Redis connect method
+2025-08-26 01:56:40,009 - core.redis_client - INFO - Establishing Redis connection
+2025-08-26 01:56:42,054 - __main__ - INFO - [USERBOT][STEP 0.0] Redis connection established
+2025-08-26 01:56:42,054 - __main__ - INFO - [USERBOT][STEP 0.1] Subscribing to PubSub channels...
+2025-08-26 01:56:42,054 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: health_check
+2025-08-26 01:56:42,054 - core.pubsub_manager.UserBot - INFO - Subscribed to channel: task_updates
+2025-08-26 01:56:42,054 - __main__ - INFO - [USERBOT][STEP 0.2] Subscriptions completed
+2025-08-26 01:56:42,054 - __main__ - INFO - [USERBOT][STEP 0.3] Starting PubSub listener...
+2025-08-26 01:56:42,054 - core.pubsub_manager.UserBot - INFO - Starting background listeners for channels: ['health_check', 'task_updates']
+2025-08-26 01:56:42,054 - core.pubsub_manager.UserBot - INFO - Started listener for channel: health_check
+2025-08-26 01:56:42,054 - core.pubsub_manager.UserBot - INFO - Started listener for channel: task_updates
+2025-08-26 01:56:42,055 - core.pubsub_manager.UserBot - INFO - All 2 listeners started successfully
+2025-08-26 01:56:42,055 - __main__ - INFO - [USERBOT][STEP 0.4] PubSub listener started
+2025-08-26 01:56:42,055 - __main__ - INFO - [USERBOT][STEP 0.5] Starting polling...
+2025-08-26 01:56:42,055 - aiogram.dispatcher - INFO - Start polling
+2025-08-26 01:56:42,055 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: health_check
+2025-08-26 01:56:42,055 - core.pubsub_manager.UserBot - INFO - Starting safe listener for channel: task_updates
+2025-08-26 01:56:42,056 - __main__ - INFO - Starting PubSub listener...
+2025-08-26 01:56:42,056 - core.pubsub_manager.UserBot - WARNING - Background listeners already running
+2025-08-26 01:56:42,163 - aiogram.dispatcher - INFO - Run polling for bot @DiskStatus_Bot id=7373455502 - 'TaskMngr'
+2025-08-26 01:56:44,102 - core.pubsub_manager.UserBot - INFO - Subscribed to health_check, waiting for messages...
+2025-08-26 01:56:44,102 - core.pubsub_manager.UserBot - INFO - Subscribed to task_updates, waiting for messages...
+2025-08-26 01:57:46,582 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test'}
+2025-08-26 01:57:46,584 - core.pubsub_manager - INFO - Received message from health_check: {'status': 'test_subscription'}
+2025-08-26 01:57:50,579 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:57:50,579 - aiogram.dispatcher - WARNING - Sleep for 1.000000 seconds and try again... (tryings = 0, bot id = 7373455502)
+2025-08-26 01:57:55,673 - aiogram.dispatcher - ERROR - Failed to fetch updates - TelegramConflictError: Telegram server says - Conflict: terminated by other getUpdates request; make sure that only one bot instance is running
+2025-08-26 01:57:55,673 - aiogram.dispatcher - WARNING - Sleep for 1.220147 seconds and try again... (tryings = 1, bot id = 7373455502)

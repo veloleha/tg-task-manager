@@ -22,9 +22,10 @@ class Settings:
     
     # Chat IDs
     BUTTONS_CHAT_ID = int(os.getenv("BUTTONS_CHAT_ID", "-1002269851341"))
-    FORUM_CHAT_ID = int(os.getenv("FORUM_CHAT_ID", "-1002269851341"))
+    FORUM_CHAT_ID = int(os.getenv("FORUM_CHAT_ID", "-1002269851341"))  # Основной чат поддержки (форум)
     MAIN_TASK_CHAT_ID = int(os.getenv("MAIN_TASK_CHAT_ID", "-1002269851341"))  # Добавим для mover_bot
     SUPPORT_CHAT_ID = int(os.getenv("SUPPORT_CHAT_ID", "-1002269851341"))  # Чат поддержки для task_bot
+    # TASK_INBOX_CHAT_ID больше не используется - медиа теперь пересылаются в темы FORUM_CHAT_ID
     
     # Intervals
     STATS_UPDATE_INTERVAL = int(os.getenv("STATS_UPDATE_INTERVAL", 30))

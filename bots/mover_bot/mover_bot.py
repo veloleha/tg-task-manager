@@ -6,6 +6,8 @@ import logging
 import asyncio
 import json
 import random
+import os
+import uuid
 from datetime import datetime
 from typing import Dict, Optional, Any
 
@@ -247,6 +249,11 @@ class MoverBot:
             # Извлекаем медиаданные из сообщения
             media_data = await self._extract_reply_media_data(message) if message else {}
             
+            # Пересылаем медиа в тему медиа в чате поддержки если есть
+            support_media_reply_message_id = None
+            if message and (media_data.get('has_photo') or media_data.get('has_video') or media_data.get('has_document')):
+                support_media_reply_message_id = await self._forward_reply_to_media_topic(message)
+            
             # Сохраняем ответ в базе данных
             update_data = {
                 "reply": reply_text,
@@ -262,7 +269,8 @@ class MoverBot:
                     "reply_has_document": media_data.get("has_document", False),
                     "reply_photo_file_ids": media_data.get("photo_file_ids", []),
                     "reply_video_file_id": media_data.get("video_file_id"),
-                    "reply_document_file_id": media_data.get("document_file_id")
+                    "reply_document_file_id": media_data.get("document_file_id"),
+                    "reply_support_media_message_id": support_media_reply_message_id  # Ссылка на медиа в теме поддержки
                 })
             
             await self.redis.update_task(task_id, **update_data)
@@ -275,7 +283,8 @@ class MoverBot:
                 "reply_author": username,
                 "reply_at": datetime.now().isoformat(),
                 "reply_message_id": reply_message_id,
-                "reply_chat_id": reply_chat_id
+                "reply_chat_id": reply_chat_id,
+                "reply_support_media_message_id": support_media_reply_message_id  # Для UserBot
             }
             
             # Добавляем медиаданные в событие
@@ -288,9 +297,56 @@ class MoverBot:
             
         except Exception as e:
             logger.error(f"Error saving reply for task {task_id}: {e}", exc_info=True)
+
+    async def _forward_reply_to_media_topic(self, message) -> Optional[int]:
+        """Пересылает ответ поддержки с медиа в тему медиа в чате поддержки"""
+        try:
+            # Получаем или создаем тему для медиа в чате поддержки
+            media_topic_id = await self._get_or_create_media_topic()
+            if not media_topic_id:
+                logger.error("Failed to get or create media topic for reply")
+                return None
+            
+            # Пересылаем сообщение в тему медиа чата поддержки
+            forwarded = await self.bot.forward_message(
+                chat_id=settings.FORUM_CHAT_ID,
+                from_chat_id=message.chat.id,
+                message_id=message.message_id,
+                message_thread_id=media_topic_id
+            )
+            logger.info(f"Forwarded reply message {message.message_id} to media topic {media_topic_id} as {forwarded.message_id}")
+            return forwarded.message_id
+        except Exception as e:
+            logger.error(f"Failed to forward reply to media topic: {e}")
+            return None
     
+    async def _download_reply_media_file(self, file_id: str, file_type: str) -> str:
+        """Скачивает медиафайл из ответа поддержки и возвращает путь к файлу"""
+        try:
+            # Получаем информацию о файле
+            file_info = await self.bot.get_file(file_id)
+            
+            # Создаём директорию для временных файлов, если её нет
+            temp_dir = "temp_media"
+            os.makedirs(temp_dir, exist_ok=True)
+            
+            # Генерируем уникальное имя файла
+            file_extension = os.path.splitext(file_info.file_path)[1] if file_info.file_path else ""
+            unique_filename = f"reply_{file_type}_{uuid.uuid4()}{file_extension}"
+            local_file_path = os.path.join(temp_dir, unique_filename)
+            
+            # Скачиваем файл
+            await self.bot.download_file(file_info.file_path, local_file_path)
+            
+            logger.info(f"Downloaded reply media file: {local_file_path}")
+            return local_file_path
+            
+        except Exception as e:
+            logger.error(f"Error downloading reply media file {file_id}: {e}")
+            return None
+
     async def _extract_reply_media_data(self, message) -> dict:
-        """Извлекает данные о медиафайлах из ответа поддержки"""
+        """Извлекает данные о медиафайлах из ответа поддержки и скачивает их"""
         if not message:
             return {}
             
@@ -298,42 +354,55 @@ class MoverBot:
             "has_photo": False,
             "has_video": False,
             "has_document": False,
-            "photo_file_ids": [],
-            "video_file_id": None,
-            "document_file_id": None,
+            "photo_file_paths": [],
+            "video_file_path": None,
+            "document_file_path": None,
             "media_group_id": getattr(message, 'media_group_id', None)
         }
         
         # Проверяем фото
         if hasattr(message, 'photo') and message.photo:
             media_data["has_photo"] = True
-            media_data["photo_file_ids"] = [photo.file_id for photo in message.photo]
-            logger.info(f"Found photo in reply message {message.message_id}, file_ids: {media_data['photo_file_ids']}")
+            # Берём фото наилучшего качества (последнее в списке)
+            best_photo = message.photo[-1]
+            photo_path = await self._download_reply_media_file(best_photo.file_id, "photo")
+            if photo_path:
+                media_data["photo_file_paths"] = [photo_path]
+                logger.info(f"Downloaded photo from reply message {message.message_id}: {photo_path}")
         
         # Проверяем видео
         if hasattr(message, 'video') and message.video:
             media_data["has_video"] = True
-            media_data["video_file_id"] = message.video.file_id
-            logger.info(f"Found video in reply message {message.message_id}, file_id: {media_data['video_file_id']}")
+            video_path = await self._download_reply_media_file(message.video.file_id, "video")
+            if video_path:
+                media_data["video_file_path"] = video_path
+                logger.info(f"Downloaded video from reply message {message.message_id}: {video_path}")
         
         # Проверяем документы
         if hasattr(message, 'document') and message.document:
             media_data["has_document"] = True
-            media_data["document_file_id"] = message.document.file_id
-            logger.info(f"Found document in reply message {message.message_id}, file_id: {media_data['document_file_id']}")
+            doc_path = await self._download_reply_media_file(message.document.file_id, "document")
+            if doc_path:
+                media_data["document_file_path"] = doc_path
+                logger.info(f"Downloaded document from reply message {message.message_id}: {doc_path}")
         
         # Проверяем видео-заметки
         if hasattr(message, 'video_note') and message.video_note:
             media_data["has_video"] = True
-            media_data["video_file_id"] = message.video_note.file_id
-            logger.info(f"Found video note in reply message {message.message_id}, file_id: {media_data['video_file_id']}")
+            video_note_path = await self._download_reply_media_file(message.video_note.file_id, "video_note")
+            if video_note_path:
+                media_data["video_file_path"] = video_note_path
+                logger.info(f"Downloaded video note from reply message {message.message_id}: {video_note_path}")
         
         # Проверяем анимации (GIF)
         if hasattr(message, 'animation') and message.animation:
             media_data["has_document"] = True
-            media_data["document_file_id"] = message.animation.file_id
-            logger.info(f"Found animation in reply message {message.message_id}, file_id: {media_data['document_file_id']}")
+            animation_path = await self._download_reply_media_file(message.animation.file_id, "animation")
+            if animation_path:
+                media_data["document_file_path"] = animation_path
+                logger.info(f"Downloaded animation from reply message {message.message_id}: {animation_path}")
         
+        logger.debug(f"Reply media data extracted: {media_data}")
         return media_data
 
     async def _send_task_with_media(self, task: dict, chat_id: int, topic_id: int, keyboard=None) -> int:
@@ -346,165 +415,222 @@ class MoverBot:
             has_photo = task.get('has_photo', False)
             has_video = task.get('has_video', False)
             has_document = task.get('has_document', False)
+            support_media_message_id = task.get('support_media_message_id')
+            # Гарантируем корректный тип message_id
+            if isinstance(support_media_message_id, str) and support_media_message_id.isdigit():
+                support_media_message_id = int(support_media_message_id)
             
             message = None
             media_sent = False
             
-            # Пытаемся переслать оригинальное сообщение с медиа, если есть информация о нем
-            original_chat_id = task.get('chat_id')
-            original_message_id = task.get('message_id')
+            # Детальное логирование для диагностики
+            logger.info(f"Media check: has_photo={has_photo}, has_video={has_video}, has_document={has_document}")
+            logger.info(f"Support media message ID: {support_media_message_id}")
+            logger.info(f"Task keys: {list(task.keys())}")
             
-            if (has_photo or has_video or has_document) and original_chat_id and original_message_id:
+            # Debug: проверяем наличие file paths в task data
+            if has_photo:
+                photo_file_paths = task.get('photo_file_paths')
+                photo_file_ids = task.get('photo_file_ids')
+                logger.info(f"🔍 Photo data in task: photo_file_paths={photo_file_paths}, photo_file_ids={photo_file_ids}")
+            if has_video:
+                video_file_path = task.get('video_file_path')
+                video_file_id = task.get('video_file_id')
+                logger.info(f"🔍 Video data in task: video_file_path={video_file_path}, video_file_id={video_file_id}")
+            if has_document:
+                document_file_path = task.get('document_file_path')
+                document_file_id = task.get('document_file_id')
+                logger.info(f"🔍 Document data in task: document_file_path={document_file_path}, document_file_id={document_file_id}")
+            
+            # Отправка медиа из скачанных файлов
+            if any([has_photo, has_video, has_document]):
                 try:
-                    logger.info(f"Attempting to forward message {original_message_id} from chat {original_chat_id} to topic {topic_id}")
+                    logger.info(f"🔄 Отправляем медиа из файлов для задачи:")
+                    logger.info(f"   - has_photo: {has_photo}, has_video: {has_video}, has_document: {has_document}")
+                    logger.info(f"   - target_chat_id: {chat_id}, target_topic_id: {topic_id}")
                     
-                    # Пересылаем оригинальное сообщение с медиа
-                    forwarded_message = await self.bot.forward_message(
-                        chat_id=chat_id,
-                        from_chat_id=original_chat_id,
-                        message_id=original_message_id,
-                        message_thread_id=topic_id
-                    )
+                    sent_message = None
                     
-                    logger.info(f"Successfully forwarded media message to topic {topic_id}")
+                    if has_photo and task.get('photo_file_paths'):
+                        # Отправляем фото из файла
+                        photo_file_path = task['photo_file_paths'][0]  # Берем первый файл
+                        logger.info(f"📷 Отправляем фото из файла: {photo_file_path}")
+                        
+                        from aiogram.types import FSInputFile
+                        photo_file = FSInputFile(photo_file_path)
+                        
+                        sent_message = await self.bot.send_photo(
+                            chat_id=chat_id,
+                            message_thread_id=topic_id,
+                            photo=photo_file,
+                            caption=msg_text,
+                            parse_mode="HTML",
+                            reply_markup=keyboard
+                        )
+                        logger.info(f"✅ Фото отправлено: msg_id={sent_message.message_id}")
+                        
+                        # НЕ удаляем временный файл - он может понадобиться при перемещении задачи между темами
+                        logger.info(f"📁 Сохраняем временный файл для возможного перемещения: {photo_file_path}")
+                        media_sent = True
                     
-                    # Отправляем текст задачи отдельным сообщением с клавиатурой
+                    elif has_video and task.get('video_file_path'):
+                        video_file_path = task['video_file_path']
+                        logger.info(f"🎥 Отправляем видео из файла: {video_file_path}")
+                        
+                        from aiogram.types import FSInputFile
+                        video_file = FSInputFile(video_file_path)
+                        
+                        sent_message = await self.bot.send_video(
+                            chat_id=chat_id,
+                            message_thread_id=topic_id,
+                            video=video_file,
+                            caption=msg_text,
+                            parse_mode="HTML",
+                            reply_markup=keyboard
+                        )
+                        logger.info(f"✅ Видео отправлено: msg_id={sent_message.message_id}")
+                        
+                        # Удаляем временный файл
+                        try:
+                            import os
+                            os.remove(video_file_path)
+                            logger.info(f"🗑️ Удален временный файл: {video_file_path}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Не удалось удалить файл {video_file_path}: {e}")
+                        
+                    elif has_document and task.get('document_file_path'):
+                        document_file_path = task['document_file_path']
+                        logger.info(f"📄 Отправляем документ из файла: {document_file_path}")
+                        
+                        from aiogram.types import FSInputFile
+                        document_file = FSInputFile(document_file_path)
+                        
+                        sent_message = await self.bot.send_document(
+                            chat_id=chat_id,
+                            message_thread_id=topic_id,
+                            document=document_file,
+                            caption=msg_text,
+                            parse_mode="HTML",
+                            reply_markup=keyboard
+                        )
+                        logger.info(f"✅ Документ отправлен: msg_id={sent_message.message_id}")
+                        
+                        # Удаляем временный файл
+                        try:
+                            import os
+                            os.remove(document_file_path)
+                            logger.info(f"🗑️ Удален временный файл: {document_file_path}")
+                        except Exception as e:
+                            logger.warning(f"⚠️ Не удалось удалить файл {document_file_path}: {e}")
+                    
+                    if sent_message:
+                        media_sent = True
+                        return sent_message.message_id
+                    else:
+                        logger.warning("⚠️ Не удалось отправить медиа - нет подходящих file_id")
+                        
+                except Exception as e:
+                    logger.error(f"❌ Ошибка отправки медиа через file_id: {e}")
+                    logger.error(f"   Тип ошибки: {type(e).__name__}")
+                
+                # Если все методы копирования не удались, отправляем только текст
+                try:
+                    logger.info("⚠️ copy_message не удалось — отправляем только текст задачи")
                     message = await self.bot.send_message(
                         chat_id=chat_id,
+                        message_thread_id=topic_id,
                         text=msg_text,
-                        message_thread_id=topic_id,
                         reply_markup=keyboard,
                         parse_mode="HTML"
                     )
-                    
-                    logger.info(f"Sent task with forwarded media to topic {topic_id} in chat {chat_id}")
-                    media_sent = True
-                    
-                except Exception as forward_error:
-                    logger.warning(f"Failed to forward media message: {forward_error}")
-                    # Продолжаем с fallback на текстовое сообщение
-            
-            # Пытаемся отправить фото по file_id, если медиа еще не отправлено
-            if not media_sent and has_photo and task.get('photo_file_ids'):
+                    logger.info(f"✅ Задача отправлена как текст в тему {topic_id} (сообщение: {message.message_id})")
+                    return message.message_id
+                except Exception as fallback_error:
+                    logger.error(f"❌ Критическая ошибка отправки задачи: {fallback_error}")
+                    return None
+
+            else:
+                if not support_media_message_id:
+                    logger.info("ℹ️ support_media_message_id отсутствует - отправляем как текст")
+                if not any([has_photo, has_video, has_document]):
+                    logger.info("ℹ️ Медиафайлы отсутствуют - отправляем как текст")
+                # Если копирование не удалось, пробуем fallback через прямые URL файла (sendPhoto/video/document)
                 try:
-                    # Безопасное получение photo_file_ids
-                    photo_file_ids = task.get('photo_file_ids', [])
-                    
-                    # Проверяем, что это список, а не строка
-                    if isinstance(photo_file_ids, str):
-                        # Если это строка JSON, пытаемся распарсить
-                        try:
-                            import json
-                            photo_file_ids = json.loads(photo_file_ids)
-                        except:
-                            logger.warning(f"Could not parse photo_file_ids string: {photo_file_ids}")
-                            raise ValueError("Invalid photo_file_ids format")
-                    
-                    # Проверяем, что список не пустой
-                    if not photo_file_ids or not isinstance(photo_file_ids, list):
-                        logger.warning(f"Invalid photo_file_ids: {photo_file_ids}")
-                        raise ValueError("Invalid photo_file_ids")
-                    
-                    # Используем последний (наибольший) размер фото
-                    photo_file_id = photo_file_ids[-1]
-                    
-                    # Детальное логирование для диагностики
-                    logger.info(f"Photo file_ids list: {photo_file_ids}")
-                    logger.info(f"Selected photo_file_id: {photo_file_id}")
-                    logger.info(f"Photo file_id length: {len(photo_file_id)}")
-                    logger.info(f"Photo file_id type: {type(photo_file_id)}")
-                    
-                    # Проверяем валидность file_id
-                    if not photo_file_id or len(photo_file_id) < 10:
-                        logger.warning(f"Invalid photo file_id: {photo_file_id}")
-                        raise ValueError("Invalid photo file_id")
-                    
-                    # Проверяем, что file_id является строкой
-                    if not isinstance(photo_file_id, str):
-                        logger.warning(f"Photo file_id is not a string: {type(photo_file_id)}")
-                        raise ValueError("Photo file_id must be a string")
-                    
-                    message = await self.bot.send_photo(
-                        chat_id=chat_id,
-                        photo=photo_file_id,
-                        caption=msg_text,
-                        message_thread_id=topic_id,
-                        reply_markup=keyboard,
-                        parse_mode="HTML"
-                    )
-                    logger.info(f"Sent task with photo to topic {topic_id} in chat {chat_id}")
-                    media_sent = True
-                except Exception as photo_error:
-                    logger.warning(f"Failed to send photo (file_id: {task.get('photo_file_ids', [])}): {photo_error}")
-                    # Продолжаем с fallback на текстовое сообщение
-            
-            # Пытаемся отправить видео, если фото не отправилось
-            elif not media_sent and has_video and task.get('video_file_id'):
+                    # ВНИМАНИЕ: URL содержат токен UserBot — не логируем их!
+                    photo_urls = task.get('photo_urls') or []
+                    video_url = task.get('video_url')
+                    document_url = task.get('document_url')
+
+                    sent_message = None
+                    if has_photo and photo_urls:
+                        # Берем последний (обычно самый большой) вариант фото
+                        photo_url = photo_urls[-1]
+                        sent_message = await self.bot.send_photo(
+                            chat_id=chat_id,
+                            message_thread_id=topic_id,
+                            photo=photo_url,
+                            caption=msg_text,
+                            parse_mode="HTML",
+                            reply_markup=keyboard
+                        )
+                    elif has_video and video_url:
+                        sent_message = await self.bot.send_video(
+                            chat_id=chat_id,
+                            message_thread_id=topic_id,
+                            video=video_url,
+                            caption=msg_text,
+                            parse_mode="HTML",
+                            reply_markup=keyboard
+                        )
+                    elif has_document and document_url:
+                        sent_message = await self.bot.send_document(
+                            chat_id=chat_id,
+                            message_thread_id=topic_id,
+                            document=document_url,
+                            caption=msg_text,
+                            parse_mode="HTML",
+                            reply_markup=keyboard
+                        )
+
+                    if sent_message:
+                        logger.info("✅ Медиа отправлено через URL fallback")
+                        return sent_message.message_id
+                except Exception as e:
+                    logger.error(f"❌ URL fallback failed: {e}")
+
+                # Если ни копирование, ни URL не удалось, отправляем только текст
                 try:
-                    video_file_id = task['video_file_id']
-                    
-                    # Проверяем валидность file_id
-                    if not video_file_id or len(video_file_id) < 10:
-                        logger.warning(f"Invalid video file_id: {video_file_id}")
-                        raise ValueError("Invalid video file_id")
-                    
-                    message = await self.bot.send_video(
+                    logger.info("⚠️ copy_message не удалось — отправляем только текст задачи")
+                    message = await self.bot.send_message(
                         chat_id=chat_id,
-                        video=video_file_id,
-                        caption=msg_text,
                         message_thread_id=topic_id,
+                        text=msg_text,
                         reply_markup=keyboard,
                         parse_mode="HTML"
                     )
-                    logger.info(f"Sent task with video to topic {topic_id} in chat {chat_id}")
-                    media_sent = True
-                except Exception as video_error:
-                    logger.warning(f"Failed to send video (file_id: {task.get('video_file_id')}): {video_error}")
-                    # Продолжаем с fallback на текстовое сообщение
+                    logger.info(f"✅ Задача отправлена как текст в тему {topic_id} (сообщение: {message.message_id})")
+                    return message.message_id
+                except Exception as fallback_error:
+                    logger.error(f"❌ Критическая ошибка отправки задачи: {fallback_error}")
+                    return None
+                return message.message_id
             
-            # Пытаемся отправить документ, если медиа не отправилось
-            elif not media_sent and has_document and task.get('document_file_id'):
-                try:
-                    document_file_id = task['document_file_id']
-                    
-                    # Проверяем валидность file_id
-                    if not document_file_id or len(document_file_id) < 10:
-                        logger.warning(f"Invalid document file_id: {document_file_id}")
-                        raise ValueError("Invalid document file_id")
-                    
-                    message = await self.bot.send_document(
-                        chat_id=chat_id,
-                        document=document_file_id,
-                        caption=msg_text,
-                        message_thread_id=topic_id,
-                        reply_markup=keyboard,
-                        parse_mode="HTML"
-                    )
-                    logger.info(f"Sent task with document to topic {topic_id} in chat {chat_id}")
-                    media_sent = True
-                except Exception as doc_error:
-                    logger.warning(f"Failed to send document (file_id: {task.get('document_file_id')}): {doc_error}")
-                    # Продолжаем с fallback на текстовое сообщение
-            
-            # Если медиа не отправилось или его нет, отправляем обычное сообщение
-            if not media_sent:
-                # Не добавляем информацию о медиа - пользователь не хочет видеть такие уведомления
-                # Оставляем только чистый текст задачи
-                
+        except Exception as e:
+            logger.error(f"Ошибка отправки задачи с медиа: {e}")
+            # Последний fallback: отправляем простое текстовое сообщение
+            try:
                 message = await self.bot.send_message(
                     chat_id=chat_id,
                     message_thread_id=topic_id,
-                    text=msg_text,
+                    text=self._format_task_message(task),
                     reply_markup=keyboard,
                     parse_mode="HTML"
                 )
-                logger.info(f"Sent task as text (media fallback) to topic {topic_id} in chat {chat_id}")
-            
-            return message.message_id if message else None
-                
-        except Exception as e:
-            logger.error(f"Failed to send task with media to topic {topic_id} in chat {chat_id}: {e}")
-            return None
+                logger.info(f"✅ Задача отправлена как fallback-текст в тему {topic_id} (сообщение: {message.message_id})")
+                return message.message_id
+            except Exception as fallback_error:
+                logger.error(f"❌ Критическая ошибка отправки задачи: {fallback_error}")
+                return None
 
     async def _handle_reopen_task(self, callback, task_id: str):
         """Обрабатывает нажатие кнопки 'Переоткрыть'"""
@@ -1311,6 +1437,37 @@ class MoverBot:
             logger.error(f"Ошибка отправки напоминания: {e}")
         finally:
             self.reminder_tasks.pop(task_id, None)
+    
+    async def _get_or_create_media_topic(self) -> Optional[int]:
+        """Получает или создает тему для медиа в чате поддержки"""
+        try:
+            # Проверяем кэш через правильный Redis клиент
+            media_topic_key = f"media_topic:{settings.FORUM_CHAT_ID}"
+            
+            # Используем redis_client вместо self.redis
+            await redis_client._ensure_connection()
+            cached_topic = await redis_client.get(media_topic_key)
+            if cached_topic:
+                topic_id = cached_topic.decode() if isinstance(cached_topic, bytes) else cached_topic
+                logger.info(f"Found cached media topic: {topic_id}")
+                return int(topic_id)
+            
+            # Создаем новую тему для медиа
+            topic_name = "📎 Медиафайлы задач"
+            logger.info(f"Creating new media topic: {topic_name}")
+            topic = await self.bot.create_forum_topic(
+                chat_id=settings.FORUM_CHAT_ID,
+                name=topic_name
+            )
+            
+            # Сохраняем в кэш через правильный Redis клиент
+            await redis_client.set(media_topic_key, str(topic.message_thread_id))
+            logger.info(f"Created and cached media topic '{topic_name}' with ID {topic.message_thread_id}")
+            
+            return topic.message_thread_id
+        except Exception as e:
+            logger.error(f"Failed to create media topic: {e}")
+            return None
 
 
 # Создание экземпляра бота
