@@ -89,7 +89,25 @@ dump.rdb
 
 # Test files (not needed for production)
 test_*.py
+*test*.py
+test/
+tests/
 final_integration_test.py
+demo.py
+demo_*.py
+*_demo.py
+
+# Temporary media files
+temp_media/
+*.jpg
+*.png
+*.gif
+*.mp4
+*.mov
+*.avi
+*.pdf
+*.doc
+*.docx
 
 # Development and debugging files
 run_polling.py
