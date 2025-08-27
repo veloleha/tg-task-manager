@@ -1009,6 +1009,128 @@ class UserBot:
             logger.error(f"Failed to send direct text reply to chat {chat_id}: {e}")
             return False
 
+    async def _send_media_reply_direct_with_id(self, chat_id: int, original_message_id: int, reply_text: str, reply_author: str, update_data: dict) -> Optional[int]:
+        """Отправляет медиа-ответ напрямую пользователю и возвращает ID отправленного сообщения"""
+        try:
+            from aiogram.types import FSInputFile
+            
+            # Формируем текст ответа
+            message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}" if reply_text else f"💬 <b>Ответ поддержки</b>"
+            
+            sent_message = None
+            
+            # Пытаемся отправить фото из файла, если есть
+            if update_data.get('has_photo') and update_data.get('photo_file_paths'):
+                try:
+                    photo_file_paths = update_data.get('photo_file_paths', [])
+                    
+                    if photo_file_paths and len(photo_file_paths) > 0:
+                        photo_path = photo_file_paths[0]  # Берём первое фото
+                        
+                        # Проверяем существование файла
+                        if not os.path.exists(photo_path):
+                            logger.warning(f"Photo file not found: {photo_path}")
+                            raise FileNotFoundError(f"Photo file not found: {photo_path}")
+                        
+                        photo_file = FSInputFile(photo_path)
+                        
+                        sent_message = await self.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=photo_file,
+                            caption=message_text,
+                            reply_to_message_id=original_message_id if original_message_id else None,
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"✅ Sent photo reply from file: {photo_path}")
+                        logger.info(f"📁 Сохраняем временный файл для возможного использования: {photo_path}")
+                        return sent_message.message_id
+                            
+                except Exception as photo_error:
+                    logger.warning(f"Failed to send direct photo reply from file: {photo_error}")
+            
+            # Пытаемся отправить видео из файла, если фото не отправилось
+            if not sent_message and update_data.get('has_video') and update_data.get('video_file_path'):
+                try:
+                    video_path = update_data.get('video_file_path')
+                    
+                    if video_path and os.path.exists(video_path):
+                        video_file = FSInputFile(video_path)
+                        
+                        sent_message = await self.bot.send_video(
+                            chat_id=chat_id,
+                            video=video_file,
+                            caption=message_text,
+                            reply_to_message_id=original_message_id if original_message_id else None,
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"✅ Sent video reply from file: {video_path}")
+                        logger.info(f"📁 Сохраняем временный файл для возможного использования: {video_path}")
+                        return sent_message.message_id
+                    else:
+                        logger.warning(f"Video file not found: {video_path}")
+                        raise FileNotFoundError(f"Video file not found: {video_path}")
+                            
+                except Exception as video_error:
+                    logger.warning(f"Failed to send direct video reply from file: {video_error}")
+            
+            # Пытаемся отправить документ из файла, если медиа не отправилось
+            if not sent_message and update_data.get('has_document') and update_data.get('document_file_path'):
+                try:
+                    document_path = update_data.get('document_file_path')
+                    
+                    if document_path and os.path.exists(document_path):
+                        document_file = FSInputFile(document_path)
+                        
+                        sent_message = await self.bot.send_document(
+                            chat_id=chat_id,
+                            document=document_file,
+                            caption=message_text,
+                            reply_to_message_id=original_message_id if original_message_id else None,
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"✅ Sent document reply from file: {document_path}")
+                        logger.info(f"📁 Сохраняем временный файл для возможного использования: {document_path}")
+                        return sent_message.message_id
+                    else:
+                        logger.warning(f"Document file not found: {document_path}")
+                        raise FileNotFoundError(f"Document file not found: {document_path}")
+                            
+                except Exception as document_error:
+                    logger.warning(f"Failed to send direct document reply from file: {document_error}")
+            
+            # Если медиа не удалось отправить, возвращаем None
+            return None
+                
+        except Exception as e:
+            logger.error(f"Failed to send direct media reply to chat {chat_id}: {e}")
+            return None
+
+    async def _send_text_reply_direct_with_id(self, chat_id: int, original_message_id: int, reply_text: str, reply_author: str) -> Optional[int]:
+        """Отправляет текстовый ответ напрямую пользователю и возвращает ID отправленного сообщения"""
+        try:
+            message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}"
+            
+            if original_message_id:
+                # Отправляем ответ как reply к оригинальному сообщению
+                sent_message = await self.bot.send_message(
+                    chat_id=chat_id,
+                    reply_to_message_id=int(original_message_id),
+                    text=message_text,
+                    parse_mode="HTML"
+                )
+            else:
+                # Если нет ID оригинального сообщения, отправляем обычное сообщение
+                sent_message = await self.bot.send_message(
+                    chat_id=chat_id,
+                    text=message_text,
+                    parse_mode="HTML"
+                )
+            return sent_message.message_id
+                
+        except Exception as e:
+            logger.error(f"Failed to send direct text reply to chat {chat_id}: {e}")
+            return None
+
     async def _send_media_to_support_topic(self, message: types.Message) -> Optional[int]:
         """Отправляет медиа в тему поддержки напрямую через send_photo/video/document"""
         try:
@@ -1529,45 +1651,51 @@ class UserBot:
                 
                 # ИСПРАВЛЕННАЯ ЛОГИКА: Отправляем ответ пользователю напрямую ТОЛЬКО ОДИН РАЗ
                 # Независимо от того, удалось ли создать/переслать сообщение в support chat
+                direct_reply_message_id = None
                 try:
                     original_message_id = task.get('message_id')
                     
                     # Проверяем наличие медиафайлов для прямого ответа
                     if has_media:
                         # Отправляем медиа напрямую пользователю
-                        success = await self._send_media_reply_direct(chat_id, original_message_id, reply_text, reply_author, update_data)
-                        if success:
+                        direct_reply_message_id = await self._send_media_reply_direct_with_id(chat_id, original_message_id, reply_text, reply_author, update_data)
+                        if direct_reply_message_id:
                             logger.info(f"Sent direct media reply to user {user_id} in chat {chat_id}")
                         else:
                             # Fallback на текстовое сообщение
-                            await self._send_text_reply_direct(chat_id, original_message_id, reply_text, reply_author)
+                            direct_reply_message_id = await self._send_text_reply_direct_with_id(chat_id, original_message_id, reply_text, reply_author)
                     else:
                         # Отправляем обычный текстовый ответ
-                        await self._send_text_reply_direct(chat_id, original_message_id, reply_text, reply_author)
+                        direct_reply_message_id = await self._send_text_reply_direct_with_id(chat_id, original_message_id, reply_text, reply_author)
                     
                     logger.info(f"Sent direct reply to user {user_id} in chat {chat_id}")
                     
-                    # ДОПОЛНИТЕЛЬНАЯ ЛОГИКА: Если не удалось создать сообщение в support chat,
-                    # но есть тема пользователя и сообщение было из главного меню - отправляем в тему тоже
-                    if (not support_reply_message_id and topic_id and target_chat_id and 
-                        message_source == "main_menu"):
+                    # НОВАЯ ЛОГИКА: Если сообщение из главного меню и есть тема пользователя,
+                    # пересылаем оригинальный ответ в тему (не создаем новое сообщение)
+                    if (message_source == "main_menu" and topic_id and target_chat_id and 
+                        direct_reply_message_id and should_forward_to_topic):
                         try:
-                            logger.info(f"Support chat unavailable, sending additional reply to user topic {topic_id} in chat {target_chat_id}")
-                            # Используем новый метод для отправки медиа в тему
-                            success = await self._send_media_reply(target_chat_id, topic_id, reply_text, reply_author, update_data)
-                            if success:
-                                logger.info(f"Sent additional reply to user topic {topic_id} in chat {target_chat_id}")
-                            else:
-                                # Fallback на обычное текстовое сообщение
+                            logger.info(f"Forwarding direct reply message {direct_reply_message_id} to user topic {topic_id} in chat {target_chat_id}")
+                            await self.bot.forward_message(
+                                chat_id=target_chat_id,
+                                from_chat_id=chat_id,
+                                message_id=direct_reply_message_id,
+                                message_thread_id=topic_id
+                            )
+                            logger.info(f"Successfully forwarded direct reply to user topic {topic_id}")
+                        except Exception as forward_e:
+                            logger.warning(f"Could not forward direct reply to user topic {topic_id}: {forward_e}")
+                            # Fallback: создаем текстовое сообщение в теме только если пересылка не удалась
+                            try:
                                 await self.bot.send_message(
                                     chat_id=target_chat_id,
                                     message_thread_id=topic_id,
                                     text=f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}",
                                     parse_mode="HTML"
                                 )
-                                logger.info(f"Sent additional text reply to user topic {topic_id} in chat {target_chat_id}")
-                        except Exception as topic_e:
-                            logger.error(f"Failed to send additional reply to user topic: {topic_e}")
+                                logger.info(f"Sent fallback text reply to topic {topic_id} in chat {target_chat_id}")
+                            except Exception as fallback_e:
+                                logger.error(f"Failed to send fallback reply to user topic: {fallback_e}")
                         
                 except Exception as e:
                     logger.error(f"Could not send direct reply to user: {e}")
@@ -1609,7 +1737,7 @@ class UserBot:
                 # Используем scan для получения ключей
                 cursor = 0
                 while True:
-                    cursor, batch = await self.redis_manager.conn.scan(cursor, match=pattern, count=100)
+                    cursor, batch = await self.redis.conn.scan(cursor, match=pattern, count=100)
                     keys.extend(batch)
                     if cursor == 0:
                         break
