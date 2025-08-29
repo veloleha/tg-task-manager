@@ -378,18 +378,34 @@ class RedisManager:
             await self._ensure_connection()
         await self.conn.set(key, value)
     
-    async def set_pinned_message_id(self, message_id: int):
+    async def set_pinned_message_id(self, message_id: Optional[int]):
         """Сохраняет ID закрепленного сообщения статистики"""
         await self._ensure_connection()
-        await self.conn.set("pinned_stats_message_id", str(message_id))
-        logger.info(f"Saved pinned message ID: {message_id}")
+        if message_id is None:
+            await self.conn.delete("pinned_stats_message_id")
+            logger.info("Cleared pinned message ID")
+        else:
+            await self.conn.set("pinned_stats_message_id", str(message_id))
+            logger.info(f"Saved pinned message ID: {message_id}")
     
     async def get_pinned_message_id(self) -> Optional[int]:
         """Получает ID закрепленного сообщения статистики"""
         await self._ensure_connection()
         message_id = await self.conn.get("pinned_stats_message_id")
         if message_id:
-            return int(message_id.decode() if isinstance(message_id, bytes) else message_id)
+            try:
+                message_id_str = message_id.decode() if isinstance(message_id, bytes) else message_id
+                # Проверяем, что это не строка 'None'
+                if message_id_str == 'None' or message_id_str == 'null':
+                    logger.warning(f"Found invalid pinned message ID: {message_id_str}, clearing it")
+                    await self.conn.delete("pinned_stats_message_id")
+                    return None
+                return int(message_id_str)
+            except (ValueError, TypeError) as e:
+                logger.error(f"Invalid pinned message ID format: {message_id}, error: {e}")
+                # Очищаем некорректное значение
+                await self.conn.delete("pinned_stats_message_id")
+                return None
         return None
     
     async def clear_pinned_message_id(self):
