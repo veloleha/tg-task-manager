@@ -661,17 +661,58 @@ class UserBot:
             
             # Подготавливаем данные нового сообщения
             new_message_text = message.text or message.caption or ""
-            if not new_message_text:
-                logger.warning(f"[USERBOT][GROUPING] Пустое сообщение, пропускаем")
+            
+            # Извлекаем медиаданные из дополнительного сообщения
+            media_data = await self._extract_media_data(message)
+            has_media = media_data.get('has_photo') or media_data.get('has_video') or media_data.get('has_document')
+            
+            # Если нет ни текста, ни медиа - пропускаем
+            if not new_message_text and not has_media:
+                logger.warning(f"[USERBOT][GROUPING] Пустое сообщение без медиа, пропускаем")
                 return False
             
             # Обновляем текст задачи
             current_text = task.get('text', '')
-            updated_text = f"{current_text}\n\n--- Дополнительное сообщение ---\n{new_message_text}"
+            if new_message_text:
+                updated_text = f"{current_text}\n\n--- Дополнительное сообщение ---\n{new_message_text}"
+            else:
+                updated_text = current_text  # Только медиа без текста
             
             # Обновляем счетчик сообщений
             current_count = int(task.get('message_count', 1))
             new_count = current_count + 1
+            
+            # Объединяем медиаданные с существующими
+            if has_media:
+                logger.info(f"[USERBOT][GROUPING] Добавляем медиа к задаче {task_id}")
+                
+                # Объединяем фото
+                if media_data.get('has_photo'):
+                    current_photo_ids = task.get('photo_file_ids', [])
+                    current_photo_paths = task.get('photo_file_paths', [])
+                    
+                    new_photo_ids = media_data.get('photo_file_ids', [])
+                    new_photo_paths = media_data.get('photo_file_paths', [])
+                    
+                    task['photo_file_ids'] = current_photo_ids + new_photo_ids
+                    task['photo_file_paths'] = current_photo_paths + new_photo_paths
+                    task['has_photo'] = True
+                    
+                    logger.info(f"[USERBOT][GROUPING] Добавлено {len(new_photo_ids)} фото к задаче {task_id}")
+                
+                # Объединяем видео (заменяем, так как обычно одно видео на сообщение)
+                if media_data.get('has_video'):
+                    task['video_file_id'] = media_data.get('video_file_id')
+                    task['video_file_path'] = media_data.get('video_file_path')
+                    task['has_video'] = True
+                    logger.info(f"[USERBOT][GROUPING] Добавлено видео к задаче {task_id}")
+                
+                # Объединяем документы (заменяем)
+                if media_data.get('has_document'):
+                    task['document_file_id'] = media_data.get('document_file_id')
+                    task['document_file_path'] = media_data.get('document_file_path')
+                    task['has_document'] = True
+                    logger.info(f"[USERBOT][GROUPING] Добавлен документ к задаче {task_id}")
             
             # Обновляем задачу в Redis
             task['text'] = updated_text
@@ -682,13 +723,30 @@ class UserBot:
             logger.info(f"[USERBOT][GROUPING] Задача {task_id} обновлена: {new_count} сообщений")
             
             # Публикуем событие об обновлении задачи
-            await self.redis.publish_event("task_updates", {
+            event_data = {
                 "type": "task_update",
                 "action": "message_appended",
                 "task_id": task_id,
                 "updated_text": new_message_text,
-                "message_count": new_count
-            })
+                "message_count": new_count,
+                "has_media": has_media
+            }
+            
+            # Добавляем информацию о медиафайлах в событие
+            if has_media:
+                event_data.update({
+                    "has_photo": media_data.get('has_photo', False),
+                    "has_video": media_data.get('has_video', False),
+                    "has_document": media_data.get('has_document', False),
+                    "photo_file_ids": media_data.get('photo_file_ids', []),
+                    "photo_file_paths": media_data.get('photo_file_paths', []),
+                    "video_file_id": media_data.get('video_file_id'),
+                    "video_file_path": media_data.get('video_file_path'),
+                    "document_file_id": media_data.get('document_file_id'),
+                    "document_file_path": media_data.get('document_file_path')
+                })
+            
+            await self.redis.publish_event("task_updates", event_data)
             logger.info(f"[USERBOT][GROUPING] Опубликовано событие message_appended для задачи {task_id}")
             
             # Отправляем сообщение в пользовательскую тему, если она существует

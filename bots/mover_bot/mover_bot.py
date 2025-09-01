@@ -140,6 +140,9 @@ class MoverBot:
                 await callback.answer("У вас нет username! Необходимо установить username в настройках Telegram", show_alert=True)
                 return
             
+            # Удаляем все дополнительные сообщения задачи из старых тем
+            await self._delete_additional_messages(task_id)
+            
             # Обновляем статус задачи и назначаем исполнителя
             await redis_client.update_task_status(task_id, "in_progress", executor)
             
@@ -164,6 +167,9 @@ class MoverBot:
                 await callback.answer("Задача не найдена", show_alert=True)
                 return
             
+            # Удаляем все дополнительные сообщения задачи из старых тем
+            await self._delete_additional_messages(task_id)
+            
             # Обновляем статус задачи и назначаем исполнителя
             await redis_client.update_task_status(task_id, "in_progress", executor)
             
@@ -182,6 +188,9 @@ class MoverBot:
     async def _handle_delete_task(self, callback, task_id: str):
         """Обрабатывает нажатие кнопки 'Удалить'"""
         try:
+            # Удаляем все дополнительные сообщения задачи из тем
+            await self._delete_additional_messages(task_id)
+            
             # Удаляем задачу из Redis с правильным декрементом счетчиков
             await self.redis.delete_task(task_id)
             
@@ -211,6 +220,9 @@ class MoverBot:
             if not task:
                 await callback.answer("Задача не найдена", show_alert=True)
                 return
+            
+            # Удаляем все дополнительные сообщения задачи из старых тем
+            await self._delete_additional_messages(task_id)
             
             # Обновляем статус задачи
             await redis_client.update_task_status(task_id, "completed", task.get('assignee'))
@@ -641,6 +653,9 @@ class MoverBot:
                 await callback.answer("Задача не найдена", show_alert=True)
                 return
             
+            # Удаляем все дополнительные сообщения задачи из старых тем
+            await self._delete_additional_messages(task_id)
+        
             # Обновляем статус задачи на "in_progress"
             executor = task.get('assignee', '')
             await redis_client.update_task_status(task_id, "in_progress", executor)
@@ -1512,16 +1527,61 @@ class MoverBot:
             logger.error(f"Failed to create media topic: {e}")
             return None
 
+    async def _delete_additional_messages(self, task_id: str):
+        """Удаляет все дополнительные сообщения задачи из тем"""
+        try:
+            # Получаем задачу из Redis
+            task = await redis_client.get_task(task_id)
+            if not task:
+                logger.warning(f"[MOVERBOT][DELETE_ADDITIONAL] Task {task_id} not found")
+                return
+            
+            # Получаем список дополнительных сообщений
+            additional_messages = task.get('additional_messages', [])
+            if not additional_messages or not isinstance(additional_messages, list):
+                logger.info(f"[MOVERBOT][DELETE_ADDITIONAL] No additional messages to delete for task {task_id}")
+                return
+            
+            deleted_count = 0
+            for msg_info in additional_messages:
+                try:
+                    message_id = msg_info.get('message_id')
+                    topic_id = msg_info.get('topic_id')
+                    chat_id = msg_info.get('chat_id', settings.FORUM_CHAT_ID)
+                    
+                    if message_id and topic_id:
+                        await self.bot.delete_message(
+                            chat_id=chat_id,
+                            message_id=message_id
+                        )
+                        deleted_count += 1
+                        logger.info(f"[MOVERBOT][DELETE_ADDITIONAL] ✅ Deleted additional message {message_id} from topic {topic_id}")
+                    
+                except Exception as delete_error:
+                    logger.warning(f"[MOVERBOT][DELETE_ADDITIONAL] Failed to delete message {msg_info.get('message_id', 'unknown')}: {delete_error}")
+            
+            # Очищаем список дополнительных сообщений в задаче
+            if deleted_count > 0:
+                await redis_client.update_task(task_id, additional_messages=[])
+                logger.info(f"[MOVERBOT][DELETE_ADDITIONAL] ✅ Cleared additional_messages list for task {task_id}")
+            
+            logger.info(f"[MOVERBOT][DELETE_ADDITIONAL] ✅ Deleted {deleted_count} additional messages for task {task_id}")
+            
+        except Exception as e:
+            logger.error(f"[MOVERBOT][DELETE_ADDITIONAL] Error deleting additional messages for task {task_id}: {e}", exc_info=True)
+
     async def _handle_message_appended(self, event: Dict):
         """Обрабатывает добавление дополнительного сообщения к задаче"""
         try:
             task_id = event.get("task_id")
             updated_text = event.get("updated_text", "")
             message_count = event.get("message_count", 1)
+            has_media = event.get("has_media", False)
             
             logger.info(f"[MOVERBOT][MESSAGE_APPENDED] Processing appended message for task {task_id}")
             logger.info(f"[MOVERBOT][MESSAGE_APPENDED] Updated text: {updated_text}")
             logger.info(f"[MOVERBOT][MESSAGE_APPENDED] Message count: {message_count}")
+            logger.info(f"[MOVERBOT][MESSAGE_APPENDED] Has media: {has_media}")
             
             # Получаем задачу из Redis
             task = await redis_client.get_task(task_id)
@@ -1538,43 +1598,212 @@ class MoverBot:
                 return
             
             # Формируем текст дополнительного сообщения
-            reply_text = (
-                f"💬 <b>Дополнительное сообщение от пользователя:</b>\n\n"
-                f"{updated_text}\n\n"
-                f"📝 <i>Сообщение #{message_count} к задаче #{task.get('task_number', 'N/A')}</i>"
-            )
-            
-            # Отправляем дополнительное сообщение как reply на исходное сообщение задачи
-            try:
-                reply_message = await self.bot.send_message(
-                    chat_id=settings.FORUM_CHAT_ID,
-                    message_thread_id=support_topic_id,
-                    text=reply_text,
-                    parse_mode="HTML",
-                    reply_to_message_id=support_message_id
+            if updated_text:
+                reply_text = (
+                    f"💬 <b>Дополнительное сообщение от пользователя:</b>\n\n"
+                    f"{updated_text}\n\n"
+                    f"📝 <i>Сообщение #{message_count} к задаче #{task.get('task_number', 'N/A')}</i>"
                 )
-                
-                logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional message {reply_message.message_id} as reply to task message {support_message_id} in topic {support_topic_id}")
-                
-            except Exception as e:
-                logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send reply message: {e}")
-                
-                # Fallback: отправляем без reply_to_message_id
+            else:
+                reply_text = (
+                    f"💬 <b>Дополнительное сообщение от пользователя (медиафайл):</b>\n\n"
+                    f"📝 <i>Сообщение #{message_count} к задаче #{task.get('task_number', 'N/A')}</i>"
+                )
+            
+            # Отправляем дополнительное сообщение с медиа (если есть) или только текст
+            additional_message_id = None
+            
+            if has_media:
+                # Пытаемся отправить медиафайлы
+                additional_message_id = await self._send_additional_message_with_media(
+                    event, reply_text, support_topic_id, support_message_id
+                )
+            
+            if not additional_message_id:
+                # Отправляем только текстовое сообщение
                 try:
-                    fallback_message = await self.bot.send_message(
+                    reply_message = await self.bot.send_message(
                         chat_id=settings.FORUM_CHAT_ID,
                         message_thread_id=support_topic_id,
                         text=reply_text,
-                        parse_mode="HTML"
+                        parse_mode="HTML",
+                        reply_to_message_id=support_message_id
                     )
                     
-                    logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional message {fallback_message.message_id} as fallback in topic {support_topic_id}")
+                    additional_message_id = reply_message.message_id
+                    logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional text message {additional_message_id} as reply to task message {support_message_id} in topic {support_topic_id}")
                     
-                except Exception as fallback_error:
-                    logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send fallback message: {fallback_error}")
+                except Exception as e:
+                    logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send reply message: {e}")
+                    
+                    # Fallback: отправляем без reply_to_message_id
+                    try:
+                        fallback_message = await self.bot.send_message(
+                            chat_id=settings.FORUM_CHAT_ID,
+                            message_thread_id=support_topic_id,
+                            text=reply_text,
+                            parse_mode="HTML"
+                        )
+                        
+                        additional_message_id = fallback_message.message_id
+                        logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional text message {additional_message_id} as fallback in topic {support_topic_id}")
+                        
+                    except Exception as fallback_error:
+                        logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send fallback message: {fallback_error}")
+            
+            # Сохраняем ID дополнительного сообщения в задаче
+            if additional_message_id:
+                try:
+                    # Получаем текущий список дополнительных сообщений
+                    additional_messages = task.get('additional_messages', [])
+                    if not isinstance(additional_messages, list):
+                        additional_messages = []
+                    
+                    # Добавляем новое сообщение с информацией о теме
+                    additional_messages.append({
+                        'message_id': additional_message_id,
+                        'topic_id': support_topic_id,
+                        'chat_id': settings.FORUM_CHAT_ID,
+                        'created_at': datetime.now().isoformat()
+                    })
+                    
+                    # Обновляем задачу в Redis
+                    await redis_client.update_task(task_id, additional_messages=additional_messages)
+                    
+                    logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Saved additional message {additional_message_id} to task {task_id}")
+                    
+                except Exception as save_error:
+                    logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Failed to save additional message ID to task: {save_error}")
             
         except Exception as e:
             logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Error handling message_appended event: {e}", exc_info=True)
+    
+    async def _send_additional_message_with_media(self, event: Dict, reply_text: str, support_topic_id: int, support_message_id: int) -> Optional[int]:
+        """Отправляет дополнительное сообщение с медиафайлами в тему поддержки"""
+        try:
+            from aiogram.types import FSInputFile
+            
+            # Извлекаем медиаданные из события
+            has_photo = event.get('has_photo', False)
+            has_video = event.get('has_video', False) 
+            has_document = event.get('has_document', False)
+            
+            photo_file_paths = event.get('photo_file_paths', [])
+            video_file_path = event.get('video_file_path')
+            document_file_path = event.get('document_file_path')
+            
+            sent_message = None
+            
+            # Отправляем фото
+            if has_photo and photo_file_paths:
+                try:
+                    for photo_path in photo_file_paths:
+                        if photo_path and os.path.exists(photo_path):
+                            photo_file = FSInputFile(photo_path)
+                            sent_message = await self.bot.send_photo(
+                                chat_id=settings.FORUM_CHAT_ID,
+                                message_thread_id=support_topic_id,
+                                photo=photo_file,
+                                caption=reply_text,
+                                parse_mode="HTML",
+                                reply_to_message_id=support_message_id
+                            )
+                            logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional photo message {sent_message.message_id} from file: {photo_path}")
+                            break  # Отправляем только первое фото с подписью
+                except Exception as photo_error:
+                    logger.warning(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send photo from file: {photo_error}")
+            
+            # Отправляем видео
+            elif has_video and video_file_path and os.path.exists(video_file_path):
+                try:
+                    video_file = FSInputFile(video_file_path)
+                    sent_message = await self.bot.send_video(
+                        chat_id=settings.FORUM_CHAT_ID,
+                        message_thread_id=support_topic_id,
+                        video=video_file,
+                        caption=reply_text,
+                        parse_mode="HTML",
+                        reply_to_message_id=support_message_id
+                    )
+                    logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional video message {sent_message.message_id} from file: {video_file_path}")
+                except Exception as video_error:
+                    logger.warning(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send video from file: {video_error}")
+            
+            # Отправляем документ
+            elif has_document and document_file_path and os.path.exists(document_file_path):
+                try:
+                    document_file = FSInputFile(document_file_path)
+                    sent_message = await self.bot.send_document(
+                        chat_id=settings.FORUM_CHAT_ID,
+                        message_thread_id=support_topic_id,
+                        document=document_file,
+                        caption=reply_text,
+                        parse_mode="HTML",
+                        reply_to_message_id=support_message_id
+                    )
+                    logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional document message {sent_message.message_id} from file: {document_file_path}")
+                except Exception as document_error:
+                    logger.warning(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send document from file: {document_error}")
+            
+            # Fallback: пытаемся отправить через file_id
+            if not sent_message:
+                photo_file_ids = event.get('photo_file_ids', [])
+                video_file_id = event.get('video_file_id')
+                document_file_id = event.get('document_file_id')
+                
+                # Отправляем фото через file_id
+                if has_photo and photo_file_ids:
+                    try:
+                        for photo_id in photo_file_ids:
+                            if photo_id:
+                                sent_message = await self.bot.send_photo(
+                                    chat_id=settings.FORUM_CHAT_ID,
+                                    message_thread_id=support_topic_id,
+                                    photo=photo_id,
+                                    caption=reply_text,
+                                    parse_mode="HTML",
+                                    reply_to_message_id=support_message_id
+                                )
+                                logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional photo message {sent_message.message_id} via file_id: {photo_id}")
+                                break
+                    except Exception as photo_id_error:
+                        logger.warning(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send photo via file_id: {photo_id_error}")
+                
+                # Отправляем видео через file_id
+                elif has_video and video_file_id:
+                    try:
+                        sent_message = await self.bot.send_video(
+                            chat_id=settings.FORUM_CHAT_ID,
+                            message_thread_id=support_topic_id,
+                            video=video_file_id,
+                            caption=reply_text,
+                            parse_mode="HTML",
+                            reply_to_message_id=support_message_id
+                        )
+                        logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional video message {sent_message.message_id} via file_id: {video_file_id}")
+                    except Exception as video_id_error:
+                        logger.warning(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send video via file_id: {video_id_error}")
+                
+                # Отправляем документ через file_id
+                elif has_document and document_file_id:
+                    try:
+                        sent_message = await self.bot.send_document(
+                            chat_id=settings.FORUM_CHAT_ID,
+                            message_thread_id=support_topic_id,
+                            document=document_file_id,
+                            caption=reply_text,
+                            parse_mode="HTML",
+                            reply_to_message_id=support_message_id
+                        )
+                        logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional document message {sent_message.message_id} via file_id: {document_file_id}")
+                    except Exception as document_id_error:
+                        logger.warning(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send document via file_id: {document_id_error}")
+            
+            return sent_message.message_id if sent_message else None
+            
+        except Exception as e:
+            logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Error sending additional message with media: {e}", exc_info=True)
+            return None
 
 
 # Создание экземпляра бота
