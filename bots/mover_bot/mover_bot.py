@@ -997,9 +997,6 @@ class MoverBot:
     async def _find_existing_topic(self, topic_name: str) -> Optional[int]:
         """Ищет существующую тему по имени в форум-чате"""
         try:
-            # Поскольку в aiogram нет прямого метода для получения списка тем форума,
-            # мы используем кэширование в Redis и проверку существующих тем
-            
             # Проверяем системные темы
             name_map = {
                 "⚠️ Неотреагированные": "unreacted",
@@ -1012,18 +1009,11 @@ class MoverBot:
                 topic_id = self.active_topics.get(topic_type)
                 if topic_id:
                     # Проверяем, что тема всё ещё существует
-                    try:
-                        # Пробуем отправить тестовое сообщение в тему
-                        # Это более надежный способ проверки существования темы
-                        await self.bot.send_chat_action(
-                            chat_id=settings.FORUM_CHAT_ID,
-                            action="typing",
-                            message_thread_id=topic_id
-                        )
+                    if await self._verify_topic_exists(topic_id):
                         return topic_id
-                    except Exception as e:
-                        # Тема не существует или произошла другая ошибка
-                        logger.warning(f"Тема {topic_name} (ID: {topic_id}) не найдена или недоступна: {e}")
+                    else:
+                        # Тема не существует, очищаем кэш
+                        logger.warning(f"Системная тема {topic_name} (ID: {topic_id}) не найдена, очищаем кэш")
                         self.active_topics[topic_type] = None
                         await self._save_topics_to_redis()
             
@@ -1033,17 +1023,12 @@ class MoverBot:
                 topic_id = self.active_topics["executors"].get(executor_name)
                 if topic_id:
                     # Проверяем, что тема всё ещё существует
-                    try:
-                        # Пробуем отправить тестовое сообщение в тему
-                        await self.bot.send_chat_action(
-                            chat_id=settings.FORUM_CHAT_ID,
-                            action="typing",
-                            message_thread_id=topic_id
-                        )
+                    if await self._verify_topic_exists(topic_id):
+                        logger.info(f"Найдена существующая тема исполнителя @{executor_name}: {topic_id}")
                         return topic_id
-                    except Exception as e:
-                        # Тема не существует или произошла другая ошибка
-                        logger.warning(f"Тема {topic_name} (ID: {topic_id}) не найдена или недоступна: {e}")
+                    else:
+                        # Тема не существует, очищаем кэш
+                        logger.warning(f"Тема исполнителя @{executor_name} (ID: {topic_id}) не найдена, очищаем кэш")
                         self.active_topics["executors"].pop(executor_name, None)
                         await self._save_topics_to_redis()
             
@@ -1051,31 +1036,84 @@ class MoverBot:
         except Exception as e:
             logger.warning(f"Не удалось найти существующую тему '{topic_name}': {e}")
             return None
-    
+
+    async def _verify_topic_exists(self, topic_id: int) -> bool:
+        """Проверяет, существует ли тема с данным ID"""
+        try:
+            # Используем несколько методов проверки для надежности
+            
+            # Метод 1: Попытка отправить chat_action
+            try:
+                await self.bot.send_chat_action(
+                    chat_id=settings.FORUM_CHAT_ID,
+                    action="typing",
+                    message_thread_id=topic_id
+                )
+                logger.debug(f"Тема {topic_id} существует (проверка через chat_action)")
+                return True
+            except Exception as e:
+                logger.debug(f"Тема {topic_id} не прошла проверку chat_action: {e}")
+            
+            # Метод 2: Попытка отправить тестовое сообщение и сразу удалить его
+            try:
+                test_message = await self.bot.send_message(
+                    chat_id=settings.FORUM_CHAT_ID,
+                    message_thread_id=topic_id,
+                    text="🔍 Проверка существования темы..."
+                )
+                # Сразу удаляем тестовое сообщение
+                await self.bot.delete_message(
+                    chat_id=settings.FORUM_CHAT_ID,
+                    message_id=test_message.message_id
+                )
+                logger.debug(f"Тема {topic_id} существует (проверка через отправку сообщения)")
+                return True
+            except Exception as e:
+                logger.debug(f"Тема {topic_id} не прошла проверку отправки сообщения: {e}")
+            
+            # Если все методы не сработали, тема не существует
+            logger.warning(f"Тема {topic_id} не существует или недоступна")
+            return False
+            
+        except Exception as e:
+            logger.error(f"Ошибка проверки существования темы {topic_id}: {e}")
+            return False
+
     async def _ensure_topic_exists(self, topic_type: str, topic_name: str = None) -> Optional[int]:
         """Создает тему при необходимости и возвращает её ID"""
         try:
             # Для исполнителей
             if topic_type == "executor" and topic_name:
-                # Проверяем кэш
+                # Проверяем кэш и подтверждаем существование темы
                 if topic_name in self.active_topics["executors"]:
-                    logger.info(f"Найдена кэшированная тема для исполнителя @{topic_name}: {self.active_topics['executors'][topic_name]}")
-                    return self.active_topics["executors"][topic_name]
+                    cached_topic_id = self.active_topics["executors"][topic_name]
+                    # Проверяем, что кэшированная тема всё ещё существует
+                    if await self._verify_topic_exists(cached_topic_id):
+                        logger.info(f"Подтверждена кэшированная тема для исполнителя @{topic_name}: {cached_topic_id}")
+                        return cached_topic_id
+                    else:
+                        # Кэшированная тема не существует, очищаем кэш
+                        logger.warning(f"Кэшированная тема исполнителя @{topic_name} (ID: {cached_topic_id}) не существует, очищаем кэш")
+                        self.active_topics["executors"].pop(topic_name, None)
+                        await self._save_topics_to_redis()
                 
-                # Пытаемся найти существующую тему
+                # Пытаемся найти существующую тему по имени
                 existing_topic_id = await self._find_existing_topic(f"🛠️ @{topic_name}")
                 if existing_topic_id:
+                    # Обновляем кэш и сохраняем в Redis
                     self.active_topics["executors"][topic_name] = existing_topic_id
+                    await self._save_topics_to_redis()
                     logger.info(f"Найдена существующая тема для исполнителя @{topic_name}: {existing_topic_id}")
                     return existing_topic_id
                 
-                # Создаём новую тему
+                # Создаём новую тему только если не нашли существующую
+                logger.info(f"Создаём новую тему для исполнителя @{topic_name}")
                 topic = await self.bot.create_forum_topic(
                     chat_id=settings.FORUM_CHAT_ID,
                     name=f"🛠️ @{topic_name}"
                 )
+                # Обновляем кэш и сохраняем в Redis
                 self.active_topics["executors"][topic_name] = topic.message_thread_id
-                # Сохраняем темы в Redis
                 await self._save_topics_to_redis()
                 logger.info(f"Создана новая тема для исполнителя @{topic_name}: {topic.message_thread_id}")
                 return topic.message_thread_id
@@ -1294,7 +1332,7 @@ class MoverBot:
         """Обновляет статистику (только счётчики, закреплённое сообщение обновляет TaskBot)"""
         try:
             # Получаем статистику для логирования
-            stats = await redis_client.get_global_stats()
+            stats = await self.redis.get_global_stats()
             logger.info(f"📊 Redis: {stats}")
             
             # MoverBot только обновляет счётчики
@@ -1372,10 +1410,15 @@ class MoverBot:
                 # Обновляем статистику при удалении задачи
                 await self._update_pinned_stats()
             elif event_type == "task_update":
-                # Для события task_update не выполняем перемещение задачи,
-                # так как это может привести к бесконечному циклу
-                # Обновляем только статистику
-                await self._update_pinned_stats()
+                # Проверяем, если это добавление сообщения к задаче
+                action = event.get("action")
+                if action == "message_appended":
+                    await self._handle_message_appended(event)
+                else:
+                    # Для других событий task_update не выполняем перемещение задачи,
+                    # так как это может привести к бесконечному циклу
+                    # Обновляем только статистику
+                    await self._update_pinned_stats()
         except Exception as e:
             logger.error(f"Ошибка обработки события задачи: {e}")
 
@@ -1468,6 +1511,70 @@ class MoverBot:
         except Exception as e:
             logger.error(f"Failed to create media topic: {e}")
             return None
+
+    async def _handle_message_appended(self, event: Dict):
+        """Обрабатывает добавление дополнительного сообщения к задаче"""
+        try:
+            task_id = event.get("task_id")
+            updated_text = event.get("updated_text", "")
+            message_count = event.get("message_count", 1)
+            
+            logger.info(f"[MOVERBOT][MESSAGE_APPENDED] Processing appended message for task {task_id}")
+            logger.info(f"[MOVERBOT][MESSAGE_APPENDED] Updated text: {updated_text}")
+            logger.info(f"[MOVERBOT][MESSAGE_APPENDED] Message count: {message_count}")
+            
+            # Получаем задачу из Redis
+            task = await redis_client.get_task(task_id)
+            if not task:
+                logger.warning(f"[MOVERBOT][MESSAGE_APPENDED] Task {task_id} not found")
+                return
+            
+            # Проверяем, есть ли у задачи сообщение в чате поддержки
+            support_message_id = task.get("support_message_id")
+            support_topic_id = task.get("support_topic_id")
+            
+            if not support_message_id or not support_topic_id:
+                logger.warning(f"[MOVERBOT][MESSAGE_APPENDED] Task {task_id} has no support message to reply to")
+                return
+            
+            # Формируем текст дополнительного сообщения
+            reply_text = (
+                f"💬 <b>Дополнительное сообщение от пользователя:</b>\n\n"
+                f"{updated_text}\n\n"
+                f"📝 <i>Сообщение #{message_count} к задаче #{task.get('task_number', 'N/A')}</i>"
+            )
+            
+            # Отправляем дополнительное сообщение как reply на исходное сообщение задачи
+            try:
+                reply_message = await self.bot.send_message(
+                    chat_id=settings.FORUM_CHAT_ID,
+                    message_thread_id=support_topic_id,
+                    text=reply_text,
+                    parse_mode="HTML",
+                    reply_to_message_id=support_message_id
+                )
+                
+                logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional message {reply_message.message_id} as reply to task message {support_message_id} in topic {support_topic_id}")
+                
+            except Exception as e:
+                logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send reply message: {e}")
+                
+                # Fallback: отправляем без reply_to_message_id
+                try:
+                    fallback_message = await self.bot.send_message(
+                        chat_id=settings.FORUM_CHAT_ID,
+                        message_thread_id=support_topic_id,
+                        text=reply_text,
+                        parse_mode="HTML"
+                    )
+                    
+                    logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Sent additional message {fallback_message.message_id} as fallback in topic {support_topic_id}")
+                    
+                except Exception as fallback_error:
+                    logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send fallback message: {fallback_error}")
+            
+        except Exception as e:
+            logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Error handling message_appended event: {e}", exc_info=True)
 
 
 # Создание экземпляра бота

@@ -219,8 +219,12 @@ class RedisManager:
             await self._ensure_connection()
             tasks = []
             async for key in self.conn.scan_iter("task:*"):
-                task = await self.get_task(key)
-                if task.get("status") == status:
+                # Извлекаем task_id из ключа (убираем префикс "task:")
+                task_id = key.decode('utf-8').replace('task:', '')
+                task = await self.get_task(task_id)
+                if task and task.get("status") == status:
+                    # Добавляем task_id в данные задачи
+                    task['task_id'] = task_id
                     tasks.append(task)
             return tasks
         except Exception as e:
@@ -231,37 +235,58 @@ class RedisManager:
         """Получает все задачи с указанным исполнителем"""
         try:
             await self._ensure_connection()
+            keys = await self.conn.smembers("tasks:index")
             tasks = []
-            async for key in self.conn.scan_iter("task:*"):
-                task = await self.get_task(key)
-                if task.get("assignee") == assignee:
-                    tasks.append(task)
+            for key in keys:
+                task_id = key.decode().split(":")[1]
+                task_data = await self.get_task(task_id)
+                if task_data and task_data.get("assignee") == assignee:
+                    task_data['task_id'] = task_id  # Add missing field
+                    tasks.append(task_data)
             return tasks
         except Exception as e:
-            logger.error(f"Error getting tasks by assignee: {e}")
+            logger.error(f"Error getting tasks by assignee {assignee}: {e}")
             return []
-
-    async def get_global_stats(self) -> Dict[str, Any]:
-        """Возвращает глобальную статистику по задачам"""
+    
+    async def get_user_tasks(self, user_id: int) -> List[Dict[str, Any]]:
+        """Получает все задачи пользователя"""
         try:
             await self._ensure_connection()
+            keys = await self.conn.smembers("tasks:index")
+            tasks = []
+            deleted_keys = []  # Список ключей удаленных задач для очистки индекса
             
-            # Ensure enhanced stats is initialized
-            if self._enhanced_stats is None:
-                from .enhanced_statistics import EnhancedStatistics
-                self._enhanced_stats = EnhancedStatistics(self)
+            for key in keys:
+                task_id = key.decode().split(":")[1]
+                logger.info(f"[DB][GET_USER_TASKS] Checking task {task_id} for user {user_id}")
+                task_data = await self.get_task(task_id)
+                logger.info(f"[DB][GET_USER_TASKS] Task {task_id} data: {task_data}")
+                # ИСПРАВЛЕНИЕ: get_task возвращает {} для несуществующих задач, а не None
+                task_exists = task_data and len(task_data) > 0 and 'user_id' in task_data and 'status' in task_data
+                logger.info(f"[DB][GET_USER_TASKS] Task {task_id} exists: {task_exists}")
+            
+                if task_exists and str(task_data.get("user_id")) == str(user_id):
+                    logger.info(f"[DB][GET_USER_TASKS] Task {task_id} belongs to user {user_id}")
+                    task_data['task_id'] = task_id  # Add missing field
+                    tasks.append(task_data)
+                elif not task_exists:
+                    logger.info(f"[DB][GET_USER_TASKS] Task {task_id} marked for cleanup (deleted)")
+                    # Задача удалена, но ключ остался в индексе - добавляем в список для очистки
+                    deleted_keys.append(key)
+            
+            # Очищаем индекс от удаленных задач
+            if deleted_keys:
+                logger.info(f"Cleaning up {len(deleted_keys)} deleted task keys from index")
+                pipeline = self.conn.pipeline()
+                for deleted_key in deleted_keys:
+                    pipeline.srem("tasks:index", deleted_key)
+                await pipeline.execute()
+                logger.info(f"Successfully cleaned up {len(deleted_keys)} deleted task keys from index")
                 
-            return await self._enhanced_stats.get_global_stats()
+            return tasks
         except Exception as e:
-            logger.error(f"Error getting global stats: {e}")
-            import traceback
-            logger.error(f"Traceback: {traceback.format_exc()}")
-            return {
-                "unreacted": 0,
-                "in_progress": 0,
-                "completed": 0,
-                "executors": {}
-            }
+            logger.error(f"Error getting tasks for user {user_id}: {e}")
+            return []
 
     async def get_executors_stats(self) -> Dict[str, Dict[str, int]]:
         """Статистика по исполнителям"""
@@ -296,10 +321,9 @@ class RedisManager:
         """Увеличивает счетчик задач"""
         try:
             await self._ensure_connection()
-            await self.conn.incr(f"counter:{counter_type}")
+            await self.conn.incr(f"stats:{counter_type}")
         except Exception as e:
-            logger.error(f"Error incrementing counter: {e}")
-            raise
+            logger.error(f"Error incrementing counter {counter_type}: {e}")
 
     async def publish_event(self, channel: str, data: Dict[str, Any]):
         """Публикует событие в Redis Pub/Sub"""
@@ -357,9 +381,14 @@ class RedisManager:
 
     async def get_task(self, task_id: str) -> Optional[dict]:
         """Получает задачу по ID"""
+        logger.info(f"[DB][GET_TASK] Attempting to get task {task_id}")
         task_data = await self.conn.get(f"task:{task_id}")
+        logger.info(f"[DB][GET_TASK] Raw data for task {task_id}: {task_data}")
         if task_data:
-            return json.loads(task_data)
+            result = json.loads(task_data)
+            logger.info(f"[DB][GET_TASK] Parsed task {task_id} data: {result}")
+            return result
+        logger.info(f"[DB][GET_TASK] Task {task_id} not found, returning None")
         return None
     
     async def update_task_data(self, task_id: str, task_data: dict):
@@ -421,19 +450,62 @@ class RedisManager:
             
             # Удаляем основную запись задачи
             task_key = f"task:{task_id}"
+            logger.info(f"[DB][DELETE_TASK] Attempting to delete task {task_id} with key {task_key}")
+            
+            # Получаем задачу перед удалением для получения user_id
+            task_data = await self.get_task(task_id)
+            user_id = task_data.get('user_id') if task_data else None
+            logger.info(f"[DB][DELETE_TASK] Task user_id: {user_id}")
+            
+            # Проверяем, существует ли задача до удаления
+            task_exists_before = await self.conn.exists(task_key)
+            logger.info(f"[DB][DELETE_TASK] Task {task_id} exists before deletion: {task_exists_before}")
+            
+            # Дополнительная проверка: удаляем задачу из всех возможных индексов
             pipeline = self.conn.pipeline()
             
             # Удаляем задачу
             pipeline.delete(task_key)
             
-            # Удаляем из индекса
+            # Удаляем из основного индекса
             pipeline.srem("tasks:index", task_key)
             
-            result = await pipeline.execute()
-            logger.info(f"Task {task_id} deleted from Redis: {result}")
+            # Если есть user_id, удаляем из пользовательского индекса (если такой существует)
+            if user_id:
+                user_index_key = f"user_tasks:{user_id}"
+                pipeline.srem(user_index_key, task_key)
+                logger.info(f"[DB][DELETE_TASK] Added removal from user index {user_index_key}")
             
+            # Дополнительная очистка: удаляем из всех пользовательских индексов
+            # Это необходимо для предотвращения утечек в случае, если user_id изменился
+            all_user_keys = await self.conn.keys("user_tasks:*")
+            for user_key in all_user_keys:
+                pipeline.srem(user_key, task_key)
+            
+            result = await pipeline.execute()
+            logger.info(f"[DB][DELETE_TASK] Task {task_id} deletion result: {result}")
+            
+            # Проверяем, существует ли задача после удаления
+            task_exists_after = await self.conn.exists(task_key)
+            logger.info(f"[DB][DELETE_TASK] Task {task_id} exists after deletion: {task_exists_after}")
+            
+            # Проверяем, есть ли задача в индексе после удаления
+            in_index_after = await self.conn.sismember("tasks:index", task_key)
+            logger.info(f"[DB][DELETE_TASK] Task {task_id} in index after deletion: {in_index_after}")
+            
+            # Дополнительная проверка: убеждаемся, что задача удалена из всех индексов
+            if task_exists_after:
+                logger.warning(f"[DB][DELETE_TASK] Task {task_id} still exists after deletion, forcing additional cleanup")
+                await self.conn.delete(task_key)
+                
+            if in_index_after:
+                logger.warning(f"[DB][DELETE_TASK] Task {task_id} still in index after deletion, forcing additional cleanup")
+                await self.conn.srem("tasks:index", task_key)
+                
         except Exception as e:
-            logger.error(f"Error deleting task {task_id}: {e}")
+            logger.error(f"[DB][DELETE_TASK] Error deleting task {task_id}: {e}")
+            import traceback
+            logger.error(f"[DB][DELETE_TASK] Traceback: {traceback.format_exc()}")
             raise
     
     # ==================== ENHANCED STATISTICS METHODS ====================

@@ -98,6 +98,21 @@ class MessageAggregator:
                 task_id = self.processed_tasks[user_id]
                 messages = self.user_messages[user_id]
                 
+                # Проверяем, существует ли задача перед обновлением
+                try:
+                    task = await self.redis.get_task(task_id)
+                    if not task or len(task) == 0 or 'user_id' not in task:
+                        logger.warning(f"Task {task_id} for user {user_id} no longer exists, clearing cache")
+                        # Удаляем из кэша, так как задача удалена
+                        if user_id in self.processed_tasks:
+                            del self.processed_tasks[user_id]
+                        if user_id in self.user_messages:
+                            del self.user_messages[user_id]
+                        return
+                except Exception as check_error:
+                    logger.error(f"Error checking task {task_id} existence: {check_error}")
+                    return
+                
                 # Объединяем все сообщения
                 combined_text = "\n".join(msg.get('text', '') for msg in messages if msg.get('text', ''))
                 
@@ -294,24 +309,27 @@ class UserBot:
                     current_thread_id = getattr(message, 'message_thread_id', None)
                     if current_thread_id and current_thread_id == user_topic_id:
                         logger.info(f"[USERBOT][MSG] User is already writing in their own topic {user_topic_id}, skipping forward")
-                    else:
-                        # Пересылаем сообщение в пользовательскую тему
-                        await self._forward_to_user_topic(message, user_topic_id, chat_id)
-                    
                     # Обновляем активность темы
                     await self.topic_manager.update_topic_activity(chat_id, user_id)
                 else:
                     logger.info(f"[USERBOT][MSG] Chat {chat_id} is not a forum or topic creation failed")
                 
-                # Проверяем, есть ли активная задача
-                existing_task = await self.redis.get(f"active_task:{user_id}:{chat_id}")
-                if existing_task:
-                    logger.info(f"[USERBOT][MSG] Found existing task: {existing_task}")
-                    # Добавляем сообщение к существующей задаче
-                    await self._append_to_task(existing_task, message)
-                    return
+                # ЭТАП 1: Проверяем, есть ли у пользователя активная задача
+                logger.info(f"[USERBOT][GROUPING] === ЭТАП 1: Поиск активной задачи ===")
+                active_task_id = await self._find_user_active_task(user_id)
+                
+                if active_task_id:
+                    logger.info(f"[USERBOT][GROUPING] ✅ ЭТАП 1 РЕЗУЛЬТАТ: Найдена активная задача {active_task_id}")
+                    # ЭТАП 3: Добавляем сообщение к существующей задаче
+                    append_success = await self._append_to_existing_task(active_task_id, message)
+                    if append_success:
+                        logger.info(f"[USERBOT][GROUPING] ✅ Сообщение успешно добавлено к задаче {active_task_id}")
+                        return  # Завершаем обработку - сообщение добавлено к существующей задаче
+                    else:
+                        logger.warning(f"[USERBOT][GROUPING] ⚠️ Не удалось добавить к задаче {active_task_id}, создаем новую")
                 else:
-                    logger.info(f"[USERBOT][MSG] No existing task found, creating new one")
+                    logger.info(f"[USERBOT][GROUPING] ✅ ЭТАП 1 РЕЗУЛЬТАТ: Активных задач не найдено")
+                    logger.info(f"[USERBOT][GROUPING] === ЭТАП 2: Создание новой задачи ===")
                 
                 # Подготавливаем данные сообщения
                 logger.info(f"[USERBOT][MSG] Preparing message data...")
@@ -323,6 +341,20 @@ class UserBot:
                 logger.info(f"[USERBOT][MSG] Creating task directly...")
                 task_id = await self._create_task_directly(message_data)
                 logger.info(f"[USERBOT][MSG] ✅ Task created directly: {task_id}")
+                
+                # ИСПРАВЛЕНИЕ: Пересылаем первое сообщение в тему пользователя
+                if user_topic_id and task_id:
+                    try:
+                        # Проверяем, не пишет ли пользователь уже в своей теме
+                        current_thread_id = getattr(message, 'message_thread_id', None)
+                        if not (current_thread_id and current_thread_id == user_topic_id):
+                            # Пересылаем оригинальное сообщение в тему пользователя
+                            forwarded_msg = await message.forward(chat_id, message_thread_id=user_topic_id)
+                            logger.info(f"[USERBOT][MSG] ✅ Переслано первое сообщение {message.message_id} в тему пользователя {user_topic_id} (forwarded as {forwarded_msg.message_id})")
+                        else:
+                            logger.info(f"[USERBOT][MSG] Пользователь уже пишет в своей теме {user_topic_id}, пересылка не нужна")
+                    except Exception as forward_error:
+                        logger.error(f"[USERBOT][MSG] ❌ Ошибка пересылки первого сообщения в тему: {forward_error}")
                 
                 # Добавляем reply-клавиатуру "Создать задачу" во всех чатах
                 reply_keyboard = types.ReplyKeyboardMarkup(
@@ -543,6 +575,160 @@ class UserBot:
             logger.info(f"📋 Task data for photo: photo_file_paths={task_data.get('photo_file_paths')}, photo_file_ids={task_data.get('photo_file_ids')}")
         
         return task_data
+
+    async def _find_user_active_task(self, user_id: int) -> Optional[str]:
+        """Ищет активную задачу пользователя (статусы: unreacted, waiting, in_progress)"""
+        try:
+            logger.info(f"[USERBOT][GROUPING] Searching for active task for user {user_id}")
+            
+            # Получаем все задачи пользователя
+            user_tasks = await self.redis.get_user_tasks(user_id)
+            logger.info(f"[USERBOT][GROUPING] Found {len(user_tasks)} total tasks for user {user_id}")
+            
+            # Ищем задачи в активных статусах
+            active_statuses = ['unreacted', 'waiting', 'in_progress']
+            active_tasks = []
+            
+            for task in user_tasks:
+                task_id = task.get('task_id')
+                status = task.get('status', 'unreacted')
+                logger.info(f"[USERBOT][GROUPING] Task {task_id}: status={status}")
+                
+                if status in active_statuses:
+                    # КРИТИЧЕСКАЯ ПРОВЕРКА: действительно ли задача существует в Redis
+                    try:
+                        actual_task = await self.redis.get_task(task_id)
+                        # ИСПРАВЛЕНИЕ: get_task возвращает {} для несуществующих задач, а не None
+                        task_exists = actual_task and len(actual_task) > 0 and 'user_id' in actual_task and 'status' in actual_task
+                        
+                        if task_exists and actual_task.get('status') in active_statuses:
+                            # Двойная проверка статуса - и в списке, и в самой задаче
+                            active_tasks.append(task)
+                            logger.info(f"[USERBOT][GROUPING] Task {task_id} is active (status: {status}) and exists in Redis")
+                        else:
+                            if not task_exists:
+                                logger.warning(f"[USERBOT][GROUPING] Task {task_id} appears active but doesn't exist in Redis - DELETED TASK, skipping")
+                            else:
+                                logger.warning(f"[USERBOT][GROUPING] Task {task_id} status mismatch: list={status}, actual={actual_task.get('status')} - skipping")
+                    except Exception as task_check_error:
+                        logger.error(f"[USERBOT][GROUPING] Error checking task {task_id} existence: {task_check_error}")
+            
+            if not active_tasks:
+                logger.info(f"[USERBOT][GROUPING] No active tasks found for user {user_id}")
+                return None
+            
+            # Если есть несколько активных задач, берем самую новую (по created_at)
+            if len(active_tasks) > 1:
+                logger.info(f"[USERBOT][GROUPING] Found {len(active_tasks)} active tasks, selecting newest")
+                active_tasks.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+            
+            selected_task = active_tasks[0]
+            task_id = selected_task.get('task_id')
+            logger.info(f"[USERBOT][GROUPING] Selected active task: {task_id} (status: {selected_task.get('status')})")
+            
+            # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: убедимся, что задача действительно существует и активна
+            final_task_check = await self.redis.get_task(task_id)
+            final_task_exists = final_task_check and len(final_task_check) > 0 and 'user_id' in final_task_check and 'status' in final_task_check
+            if not final_task_exists or final_task_check.get('status') not in active_statuses:
+                logger.warning(f"[USERBOT][GROUPING] Final check failed for task {task_id} - task may have been deleted during processing")
+                return None
+            
+            return task_id
+            
+        except Exception as e:
+            logger.error(f"[USERBOT][GROUPING] Error finding active task for user {user_id}: {e}")
+            return None
+    
+    async def _append_to_existing_task(self, task_id: str, message: types.Message) -> bool:
+        """Добавляет сообщение к существующей задаче и отправляет reply в чат поддержки"""
+        try:
+            logger.info(f"[USERBOT][GROUPING] === ЭТАП 3: Добавление к задаче {task_id} ===")
+            
+            # Получаем задачу из Redis
+            task = await self.redis.get_task(task_id)
+            # ИСПРАВЛЕНИЕ: get_task возвращает {} для несуществующих задач, а не None
+            if not task or len(task) == 0 or 'user_id' not in task:
+                logger.error(f"[USERBOT][GROUPING] Задача {task_id} не найдена в Redis или удалена")
+                return False
+            
+            logger.info(f"[USERBOT][GROUPING] Задача {task_id} найдена, статус: {task.get('status')}")
+            
+            # ДОПОЛНИТЕЛЬНАЯ ПРОВЕРКА: убедимся, что задача все еще активна
+            active_statuses = ['unreacted', 'waiting', 'in_progress']
+            if task.get('status') not in active_statuses:
+                logger.warning(f"[USERBOT][GROUPING] Задача {task_id} больше не активна (статус: {task.get('status')}), не добавляем сообщение")
+                return False
+            
+            # Подготавливаем данные нового сообщения
+            new_message_text = message.text or message.caption or ""
+            if not new_message_text:
+                logger.warning(f"[USERBOT][GROUPING] Пустое сообщение, пропускаем")
+                return False
+            
+            # Обновляем текст задачи
+            current_text = task.get('text', '')
+            updated_text = f"{current_text}\n\n--- Дополнительное сообщение ---\n{new_message_text}"
+            
+            # Обновляем счетчик сообщений
+            current_count = int(task.get('message_count', 1))
+            new_count = current_count + 1
+            
+            # Обновляем задачу в Redis
+            task['text'] = updated_text
+            task['message_count'] = new_count
+            task['updated_at'] = datetime.now().isoformat()
+            
+            await self.redis.update_task(task_id, **task)
+            logger.info(f"[USERBOT][GROUPING] Задача {task_id} обновлена: {new_count} сообщений")
+            
+            # Публикуем событие об обновлении задачи
+            await self.redis.publish_event("task_updates", {
+                "type": "task_update",
+                "action": "message_appended",
+                "task_id": task_id,
+                "updated_text": new_message_text,
+                "message_count": new_count
+            })
+            logger.info(f"[USERBOT][GROUPING] Опубликовано событие message_appended для задачи {task_id}")
+            
+            # Отправляем сообщение в пользовательскую тему, если она существует
+            try:
+                user_topic_id = await self.topic_manager.get_or_create_user_topic(
+                    user_id=message.from_user.id,
+                    chat_id=message.chat.id
+                )
+                
+                if user_topic_id and message.chat.id != settings.FORUM_CHAT_ID:
+                    # Пересылаем оригинальное сообщение пользователя в его тему
+                    forwarded_message = await self.bot.forward_message(
+                        chat_id=message.chat.id,
+                        from_chat_id=message.chat.id,
+                        message_id=message.message_id,
+                        message_thread_id=user_topic_id
+                    )
+                    
+                    logger.info(f"[USERBOT][GROUPING] ✅ Переслано дополнительное сообщение {message.message_id} в тему пользователя {user_topic_id} (forwarded as {forwarded_message.message_id})")
+                    
+            except Exception as topic_error:
+                logger.warning(f"[USERBOT][GROUPING] Не удалось отправить сообщение в тему пользователя: {topic_error}")
+            
+            # Устанавливаем реакцию на сообщение
+            try:
+                await self.bot.set_message_reaction(
+                    chat_id=message.chat.id,
+                    message_id=message.message_id,
+                    reaction=[{"type": "emoji", "emoji": "🔄"}]  # Символ "обновление"
+                )
+                logger.info(f"[USERBOT][GROUPING] Установлена реакция 🔄 на сообщение {message.message_id}")
+            except Exception as reaction_error:
+                logger.warning(f"[USERBOT][GROUPING] Не удалось установить реакцию: {reaction_error}")
+            
+            logger.info(f"[USERBOT][GROUPING] ✅ ЭТАП 3 ЗАВЕРШЕН: Сообщение добавлено к задаче {task_id}")
+            return True
+            
+        except Exception as e:
+            logger.error(f"[USERBOT][GROUPING] Ошибка при добавлении сообщения к задаче {task_id}: {e}")
+            return False
 
     async def _download_media_file(self, file_id: str, file_extension: str) -> Optional[str]:
         """Скачивает медиа файл и возвращает путь к нему"""
@@ -1361,7 +1547,7 @@ class UserBot:
             task['text'] += "\n" + message.text
             
             # Обновляем задачу в Redis
-            await self.redis.update_task(task_id, task)
+            await self.redis.update_task(task_id, **task)
             
             # Обновляем сообщение в чате поддержки
             await self.task_bot.update_task_message(task_id, task['text'])
@@ -1443,6 +1629,14 @@ class UserBot:
                 await self._handle_status_change(task_id, update_data)
             elif update_type == 'new_reply':
                 await self._handle_new_reply(task_id, update_data)
+            elif update_type == 'task_deleted':
+                # Обрабатываем удаление задачи - сбрасываем кэшированную информацию
+                logger.info(f"[USERBOT][TASK_DELETED] Task {task_id} was deleted, clearing any cached references")
+                # Удаляем задачу из processed_tasks если она там есть
+                for user_id, cached_task_id in list(self.message_aggregator.processed_tasks.items()):
+                    if cached_task_id == task_id:
+                        del self.message_aggregator.processed_tasks[user_id]
+                        logger.info(f"[USERBOT][TASK_DELETED] Cleared cached task {task_id} for user {user_id}")
                 
         except Exception as e:
             logger.error(f"Error handling task update: {e}")

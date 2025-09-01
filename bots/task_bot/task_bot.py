@@ -65,6 +65,64 @@ class TaskBot:
             logger.info(f"Start command from user {message.from_user.id}")
             await message.answer("🚀 Task Management Bot готов к работе!")
 
+        @self.dp.message(Command("menu"))
+        async def cmd_menu(message: types.Message):
+            """Показывает главное меню с административными функциями"""
+            logger.info(f"Menu command from user {message.from_user.id}")
+            
+            # Создаем инлайн-клавиатуру с кнопками управления
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="🔄 Завершить все активные задачи",
+                    callback_data="admin_complete_all"
+                )],
+                [InlineKeyboardButton(
+                    text="📊 Показать статистику",
+                    callback_data="admin_show_stats"
+                )],
+                [InlineKeyboardButton(
+                    text="🗑️ Очистить завершенные задачи",
+                    callback_data="admin_cleanup_completed"
+                )],
+                [InlineKeyboardButton(
+                    text="⚠️ ПОЛНАЯ ОЧИСТКА БД",
+                    callback_data="admin_full_reset_confirm"
+                )]
+            ])
+            
+            await message.answer(
+                "🎛️ <b>Панель управления TaskBot</b>\n\n"
+                "Выберите действие:",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+
+        @self.dp.callback_query(lambda c: c.data.startswith("admin_"))
+        async def handle_admin_callback(callback: types.CallbackQuery):
+            """Обработчик административных команд"""
+            try:
+                action = callback.data.replace("admin_", "")
+                logger.info(f"Admin action from {callback.from_user.username}: {action}")
+                
+                if action == "complete_all":
+                    await self._complete_all_active_tasks(callback)
+                elif action == "show_stats":
+                    await self._show_detailed_stats(callback)
+                elif action == "cleanup_completed":
+                    await self._cleanup_completed_tasks(callback)
+                elif action == "full_reset_confirm":
+                    await self._full_reset_confirmation(callback)
+                elif action == "full_reset_execute":
+                    await self._full_reset_database(callback)
+                elif action == "full_reset_cancel":
+                    await self._full_reset_cancel(callback)
+                else:
+                    await callback.answer("❌ Неизвестная команда")
+                    
+            except Exception as e:
+                logger.error(f"Error handling admin callback: {e}")
+                await callback.answer("❌ Ошибка выполнения команды")
+
         @self.dp.callback_query(lambda c: c.data.startswith(("status_", "action_")))
         async def handle_callback(callback: types.CallbackQuery, state: FSMContext):
             try:
@@ -462,10 +520,10 @@ class TaskBot:
             logger.error(f"Error updating message for task {task_id}: {e}")
     
     async def _update_pinned_stats(self):
-        """Обновляет закреплённое сообщение со статистикой в главном чате"""
+        """Обновляет закреплённое сообщение со статистикой в главном чате (с защитой от Flood Control)"""
         try:
             # Получаем статистику из Redis с новой системой
-            stats = await redis_client.get_global_stats()
+            stats = await self.redis.get_global_stats()
             
             # Формируем текст статистики с новым форматированием
             stats_text = await redis_client.format_pinned_message(stats)
@@ -521,7 +579,7 @@ class TaskBot:
             logger.error(f"Error updating pinned stats: {e}")
     
     async def _create_new_pinned_stats(self, stats_text: str):
-        """Создаёт новое закреплённое сообщение со статистикой"""
+        """Создаёт новое закреплённое сообщение со статистикой (с защитой от Flood Control)"""
         try:
             # Отправляем новое сообщение
             message = await self.bot.send_message(
@@ -529,6 +587,9 @@ class TaskBot:
                 text=stats_text,
                 parse_mode="HTML"
             )
+            
+            # Небольшая задержка перед закреплением
+            await asyncio.sleep(0.5)
             
             # Закрепляем сообщение
             await self.bot.pin_chat_message(
@@ -543,7 +604,12 @@ class TaskBot:
             logger.info(f"Created and pinned new stats message {message.message_id}")
             
         except Exception as e:
-            logger.error(f"Error creating new pinned stats: {e}")
+            error_text = str(e)
+            if "flood control exceeded" in error_text.lower() or "too many requests" in error_text.lower():
+                logger.warning(f"Flood control detected when creating pinned stats, skipping update: {e}")
+                # Не логируем как error - это нормальное поведение при массовых операциях
+            else:
+                logger.error(f"Error creating new pinned stats: {e}")
     
     async def _format_pinned_stats(self, stats: dict) -> str:
         """Форматирует текст статистики для закреплённого сообщения (устаревший метод)"""
@@ -554,6 +620,306 @@ class TaskBot:
         except Exception as e:
             logger.error(f"Error formatting pinned stats: {e}")
             return "📊 Ошибка получения статистики"
+
+    async def _complete_all_active_tasks(self, callback: types.CallbackQuery):
+        """Завершает все активные задачи (unreacted и in_progress)"""
+        try:
+            await callback.answer("🔄 Завершаю все активные задачи...")
+            
+            # Получаем все задачи со статусами unreacted и in_progress
+            unreacted_tasks = await self.redis.get_tasks_by_status("unreacted")
+            in_progress_tasks = await self.redis.get_tasks_by_status("in_progress")
+            
+            total_tasks = len(unreacted_tasks) + len(in_progress_tasks)
+            
+            if total_tasks == 0:
+                await callback.message.edit_text(
+                    "✅ <b>Нет активных задач для завершения</b>\n\n"
+                    "Все задачи уже завершены или закрыты.",
+                    parse_mode="HTML"
+                )
+                return
+            
+            # Показываем прогресс
+            await callback.message.edit_text(
+                f"🔄 <b>Завершаю {total_tasks} активных задач...</b>\n\n"
+                f"⏳ Это может занять некоторое время для избежания ограничений Telegram.",
+                parse_mode="HTML"
+            )
+            
+            completed_count = 0
+            batch_size = 5  # Обрабатываем по 5 задач за раз
+            delay_between_batches = 2.0  # 2 секунды между батчами
+            
+            # Объединяем все задачи в один список
+            all_tasks = unreacted_tasks + in_progress_tasks
+            
+            # Обрабатываем задачи батчами
+            for i in range(0, len(all_tasks), batch_size):
+                batch = all_tasks[i:i + batch_size]
+                
+                # Обрабатываем текущий батч
+                for task in batch:
+                    try:
+                        task_id = task.get('task_id')
+                        if task_id:
+                            await self._change_status(task_id, "completed", "admin")
+                            completed_count += 1
+                            logger.info(f"Completed task {task_id} ({completed_count}/{total_tasks})")
+                    except Exception as e:
+                        logger.error(f"Error completing task {task.get('task_id')}: {e}")
+                
+                # Обновляем прогресс
+                progress_percent = int((completed_count / total_tasks) * 100)
+                await callback.message.edit_text(
+                    f"🔄 <b>Завершаю задачи... {progress_percent}%</b>\n\n"
+                    f"✅ Завершено: {completed_count} из {total_tasks}\n"
+                    f"⏳ Осталось: {total_tasks - completed_count}",
+                    parse_mode="HTML"
+                )
+                
+                # Задержка между батчами (кроме последнего)
+                if i + batch_size < len(all_tasks):
+                    await asyncio.sleep(delay_between_batches)
+            
+            # Финальное сообщение
+            await callback.message.edit_text(
+                f"✅ <b>Массовое завершение задач выполнено</b>\n\n"
+                f"📊 Завершено задач: {completed_count} из {total_tasks}\n"
+                f"🔄 Неотреагированных: {len(unreacted_tasks)}\n"
+                f"⚡ В работе: {len(in_progress_tasks)}\n\n"
+                f"⏱️ Обработка завершена с защитой от Telegram Flood Control.",
+                parse_mode="HTML"
+            )
+            
+            logger.info(f"Admin {callback.from_user.username} completed {completed_count} active tasks with rate limiting")
+            
+        except Exception as e:
+            logger.error(f"Error in _complete_all_active_tasks: {e}")
+            await callback.message.edit_text(
+                "❌ <b>Ошибка при завершении задач</b>\n\n"
+                f"Произошла ошибка: {str(e)}",
+                parse_mode="HTML"
+            )
+    
+    async def _show_detailed_stats(self, callback: types.CallbackQuery):
+        """Показывает детальную статистику по задачам"""
+        try:
+            await callback.answer("📊 Получаю статистику...")
+            
+            # Получаем статистику по всем статусам
+            stats = await self.redis.get_global_stats()
+            
+            # Получаем задачи по статусам для детального анализа
+            unreacted = await self.redis.get_tasks_by_status("unreacted")
+            in_progress = await self.redis.get_tasks_by_status("in_progress")
+            completed = await self.redis.get_tasks_by_status("completed")
+            
+            stats_text = (
+                f"📊 <b>Детальная статистика TaskBot</b>\n\n"
+                f"🔄 Неотреагированные: {len(unreacted)}\n"
+                f"⚡ В работе: {len(in_progress)}\n"
+                f"✅ Завершенные: {len(completed)}\n"
+                f"📈 Всего задач: {len(unreacted) + len(in_progress) + len(completed)}\n\n"
+                f"🕐 Время обновления: {datetime.now().strftime('%H:%M:%S')}"
+            )
+            
+            await callback.message.edit_text(
+                stats_text,
+                parse_mode="HTML"
+            )
+            
+        except Exception as e:
+            logger.error(f"Error in _show_detailed_stats: {e}")
+            await callback.message.edit_text(
+                "❌ <b>Ошибка получения статистики</b>\n\n"
+                f"Произошла ошибка: {str(e)}",
+                parse_mode="HTML"
+            )
+    
+    async def _cleanup_completed_tasks(self, callback: types.CallbackQuery):
+        """Очищает завершенные задачи из Redis"""
+        try:
+            await callback.answer("🗑️ Очищаю завершенные задачи...")
+            
+            # Получаем все завершенные задачи
+            completed_tasks = await self.redis.get_tasks_by_status("completed")
+            
+            if not completed_tasks:
+                await callback.message.edit_text(
+                    "✅ <b>Нет завершенных задач для очистки</b>\n\n"
+                    "База данных уже чистая.",
+                    parse_mode="HTML"
+                )
+                return
+            
+            deleted_count = 0
+            
+            # Удаляем завершенные задачи
+            for task in completed_tasks:
+                try:
+                    task_id = task.get('task_id')
+                    if task_id:
+                        await self.redis.delete_task(task_id)
+                        deleted_count += 1
+                except Exception as e:
+                    logger.error(f"Error deleting completed task {task.get('task_id')}: {e}")
+            
+            await callback.message.edit_text(
+                f"✅ <b>Очистка завершенных задач выполнена</b>\n\n"
+                f"🗑️ Удалено задач: {deleted_count} из {len(completed_tasks)}",
+                parse_mode="HTML"
+            )
+            
+            logger.info(f"Admin {callback.from_user.username} deleted {deleted_count} completed tasks")
+            
+        except Exception as e:
+            logger.error(f"Error in _cleanup_completed_tasks: {e}")
+            await callback.message.edit_text(
+                "❌ <b>Ошибка при очистке задач</b>\n\n"
+                f"Произошла ошибка: {str(e)}",
+                parse_mode="HTML"
+            )
+
+    async def _full_reset_confirmation(self, callback: types.CallbackQuery):
+        """Показывает предупреждение и запрашивает подтверждение полной очистки БД"""
+        try:
+            await callback.answer("⚠️ ВНИМАНИЕ! Это удалит ВСЕ данные!")
+            
+            # Создаем клавиатуру подтверждения
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="🔥 ДА, УДАЛИТЬ ВСЁ",
+                    callback_data="admin_full_reset_execute"
+                )],
+                [InlineKeyboardButton(
+                    text="❌ Отмена",
+                    callback_data="admin_full_reset_cancel"
+                )]
+            ])
+            
+            await callback.message.edit_text(
+                "⚠️ <b>ПОЛНАЯ ОЧИСТКА БАЗЫ ДАННЫХ REDIS</b>\n\n"
+                "🚨 <b>ВНИМАНИЕ! ЭТО ДЕЙСТВИЕ НЕОБРАТИМО!</b>\n\n"
+                "Будут удалены:\n"
+                "• 🗂️ Все задачи (активные, завершённые, в работе)\n"
+                "• 📊 Вся статистика\n"
+                "• 👥 Данные исполнителей\n"
+                "• 🔢 Счётчики и номера задач\n"
+                "• 📌 ID закреплённых сообщений\n"
+                "• 🎯 Темы форума\n\n"
+                "<b>ВЫ УВЕРЕНЫ, ЧТО ХОТИТЕ ПРОДОЛЖИТЬ?</b>",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            
+            logger.warning(f"Admin {callback.from_user.username} requested full database reset confirmation")
+            
+        except Exception as e:
+            logger.error(f"Error in _full_reset_confirmation: {e}")
+            await callback.message.edit_text(
+                "❌ <b>Ошибка при отображении подтверждения</b>\n\n"
+                f"Произошла ошибка: {str(e)}",
+                parse_mode="HTML"
+            )
+
+    async def _full_reset_database(self, callback: types.CallbackQuery):
+        """Выполняет полную очистку Redis БД с подробным логированием"""
+        try:
+            await callback.answer("🔥 Выполняю полную очистку БД...")
+            
+            # Показываем прогресс
+            await callback.message.edit_text(
+                "🔥 <b>ВЫПОЛНЯЕТСЯ ПОЛНАЯ ОЧИСТКА БАЗЫ ДАННЫХ</b>\n\n"
+                "⏳ Пожалуйста, подождите...\n"
+                "🚫 НЕ ПРЕРЫВАЙТЕ ПРОЦЕСС!",
+                parse_mode="HTML"
+            )
+            
+            logger.critical(f"FULL DATABASE RESET initiated by admin {callback.from_user.username}")
+            
+            # Получаем статистику перед удалением (с обработкой ошибок)
+            total_tasks = 0
+            try:
+                stats_before = await self.redis.get_global_stats()
+                total_tasks = stats_before.get('unreacted', 0) + stats_before.get('in_progress', 0) + stats_before.get('completed', 0)
+                logger.info(f"Retrieved stats before clearing: {stats_before}")
+            except Exception as stats_error:
+                logger.error(f"Error getting stats before clearing: {stats_error}")
+                # Продолжаем очистку даже если не удалось получить статистику
+            
+            # Выполняем полную очистку Redis
+            await self.redis.conn.flushdb()
+            
+            # Небольшая задержка для завершения операции
+            await asyncio.sleep(1.0)
+            
+            # Финальное сообщение
+            await callback.message.edit_text(
+                "✅ <b>ПОЛНАЯ ОЧИСТКА БАЗЫ ДАННЫХ ЗАВЕРШЕНА</b>\n\n"
+                f"🗑️ Удалено задач: {total_tasks}\n"
+                f"📊 Очищена вся статистика\n"
+                f"👤 Администратор: {callback.from_user.username}\n"
+                f"🕐 Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n\n"
+                "🔄 <b>База данных полностью очищена и готова к работе</b>\n\n"
+                "⚠️ Все боты продолжают работать, но статистика сброшена.",
+                parse_mode="HTML"
+            )
+            
+            logger.critical(f"FULL DATABASE RESET completed by admin {callback.from_user.username}. Total tasks deleted: {total_tasks}")
+            
+        except Exception as e:
+            logger.error(f"Error in _full_reset_database: {e}")
+            await callback.message.edit_text(
+                "❌ <b>ОШИБКА ПРИ ПОЛНОЙ ОЧИСТКЕ БД</b>\n\n"
+                f"Произошла ошибка: {str(e)}\n\n"
+                "⚠️ База данных может быть в неконсистентном состоянии.\n"
+                "Рекомендуется перезапустить систему.",
+                parse_mode="HTML"
+            )
+
+    async def _full_reset_cancel(self, callback: types.CallbackQuery):
+        """Отменяет полную очистку БД и возвращает в главное меню"""
+        try:
+            await callback.answer("✅ Полная очистка БД отменена")
+            
+            # Возвращаемся к главному меню
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                [InlineKeyboardButton(
+                    text="🔄 Завершить все активные задачи",
+                    callback_data="admin_complete_all"
+                )],
+                [InlineKeyboardButton(
+                    text="📊 Показать статистику",
+                    callback_data="admin_show_stats"
+                )],
+                [InlineKeyboardButton(
+                    text="🗑️ Очистить завершенные задачи",
+                    callback_data="admin_cleanup_completed"
+                )],
+                [InlineKeyboardButton(
+                    text="⚠️ ПОЛНАЯ ОЧИСТКА БД",
+                    callback_data="admin_full_reset_confirm"
+                )]
+            ])
+            
+            await callback.message.edit_text(
+                "🎛️ <b>Панель управления TaskBot</b>\n\n"
+                "✅ Полная очистка БД отменена.\n\n"
+                "Выберите действие:",
+                parse_mode="HTML",
+                reply_markup=keyboard
+            )
+            
+            logger.info(f"Admin {callback.from_user.username} cancelled full database reset")
+            
+        except Exception as e:
+            logger.error(f"Error in _full_reset_cancel: {e}")
+            await callback.message.edit_text(
+                "❌ <b>Ошибка при отмене операции</b>\n\n"
+                f"Произошла ошибка: {str(e)}",
+                parse_mode="HTML"
+            )
 
     async def start_polling(self):
         """Запуск бота в режиме long polling с инициализацией PubSub"""

@@ -23,8 +23,6 @@ class RedisManager:
     async def delete_task(self, task_id: str) -> bool:
         """Удаляет задачу"""
         try:
-            await self.redis._ensure_connection()
-            
             # Получаем задачу для обновления счетчиков
             task = await self.get_task(task_id)
             if task:
@@ -35,14 +33,17 @@ class RedisManager:
                 if assignee := task.get('assignee'):
                     await self._decrement_executor_counter(assignee, status)
             
-            # Удаляем задачу
-            result = await self.redis.conn.delete(task_id)
+            # Используем полную реализацию удаления из core Redis client
+            result = await self.redis.delete_task(task_id)
             
-            # Удаляем из индекса
-            await self.redis.conn.srem("tasks:index", task_id)
+            # Публикуем событие об удалении задачи
+            await self.publish_event("task_updates", {
+                "type": "task_deleted",
+                "task_id": task_id
+            })
             
             logger.info(f"Task {task_id} deleted successfully")
-            return bool(result)
+            return result
             
         except Exception as e:
             logger.error(f"Error deleting task {task_id}: {e}")
