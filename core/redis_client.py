@@ -536,7 +536,7 @@ class RedisManager:
                 self._enhanced_stats = EnhancedStatistics(self)
             
             if stats is None:
-                stats = await self.get_global_stats()
+                stats = await self._enhanced_stats.get_global_stats()
             return self._enhanced_stats.format_pinned_message(stats)
         except Exception as e:
             logger.error(f"Error formatting pinned message: {e}")
@@ -560,6 +560,26 @@ class RedisManager:
         except Exception as e:
             logger.error(f"Error formatting period stats: {e}")
             return f"📈 Ошибка получения статистики за {period}"
+    
+    async def get_global_stats(self) -> Dict[str, Any]:
+        """Get comprehensive global statistics"""
+        try:
+            await self._ensure_connection()
+            
+            # Ensure enhanced stats is initialized
+            if self._enhanced_stats is None:
+                from .enhanced_statistics import EnhancedStatistics
+                self._enhanced_stats = EnhancedStatistics(self)
+                
+            return await self._enhanced_stats.get_global_stats()
+        except Exception as e:
+            logger.error(f"Error getting global stats: {e}")
+            return {
+                "unreacted": 0,
+                "in_progress": 0,
+                "completed": 0,
+                "executors": {}
+            }
     
     async def reset_all_counters(self):
         """Reset all statistics counters (for testing/debugging)"""
