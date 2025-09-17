@@ -293,6 +293,9 @@ class UserBot:
                 user_id = message.from_user.id
                 chat_id = message.chat.id
                 
+                # Проверяем, пишет ли пользователь в своей теме (инициализируем как False)
+                user_in_own_topic = False
+                
                 # Создаем или получаем пользовательскую тему в текущем чате (если это форум)
                 logger.info(f"[USERBOT][MSG] Getting or creating user topic for user {user_id} in chat {chat_id}...")
                 user_topic_id = await self.topic_manager.get_or_create_user_topic(
@@ -307,8 +310,9 @@ class UserBot:
                     
                     # Проверяем, не пишет ли пользователь уже в своей теме
                     current_thread_id = getattr(message, 'message_thread_id', None)
-                    if current_thread_id and current_thread_id == user_topic_id:
-                        logger.info(f"[USERBOT][MSG] User is already writing in their own topic {user_topic_id}, skipping forward")
+                    user_in_own_topic = current_thread_id and current_thread_id == user_topic_id
+                    if user_in_own_topic:
+                        logger.info(f"[USERBOT][MSG] User is already writing in their own topic {user_topic_id}, will process as additional message")
                     # Обновляем активность темы
                     await self.topic_manager.update_topic_activity(chat_id, user_id)
                 else:
@@ -342,19 +346,16 @@ class UserBot:
                 task_id = await self._create_task_directly(message_data)
                 logger.info(f"[USERBOT][MSG] ✅ Task created directly: {task_id}")
                 
-                # ИСПРАВЛЕНИЕ: Пересылаем первое сообщение в тему пользователя
-                if user_topic_id and task_id:
+                # Пересылка сообщения в тему пользователя (если он не в своей теме)
+                if user_topic_id and task_id and not user_in_own_topic:
                     try:
-                        # Проверяем, не пишет ли пользователь уже в своей теме
-                        current_thread_id = getattr(message, 'message_thread_id', None)
-                        if not (current_thread_id and current_thread_id == user_topic_id):
-                            # Пересылаем оригинальное сообщение в тему пользователя
-                            forwarded_msg = await message.forward(chat_id, message_thread_id=user_topic_id)
-                            logger.info(f"[USERBOT][MSG] ✅ Переслано первое сообщение {message.message_id} в тему пользователя {user_topic_id} (forwarded as {forwarded_msg.message_id})")
-                        else:
-                            logger.info(f"[USERBOT][MSG] Пользователь уже пишет в своей теме {user_topic_id}, пересылка не нужна")
+                        # Пересылаем оригинальное сообщение в тему пользователя
+                        forwarded_msg = await message.forward(chat_id, message_thread_id=user_topic_id)
+                        logger.info(f"[USERBOT][MSG] ✅ Переслано сообщение {message.message_id} в тему пользователя {user_topic_id} (forwarded as {forwarded_msg.message_id})")
                     except Exception as forward_error:
-                        logger.error(f"[USERBOT][MSG] ❌ Ошибка пересылки первого сообщения в тему: {forward_error}")
+                        logger.error(f"[USERBOT][MSG] ❌ Ошибка пересылки сообщения в тему: {forward_error}")
+                elif user_in_own_topic:
+                    logger.info(f"[USERBOT][MSG] Пользователь уже пишет в своей теме {user_topic_id}, пересылка не нужна")
                 
                 # Добавляем reply-клавиатуру "Создать задачу" во всех чатах
                 reply_keyboard = types.ReplyKeyboardMarkup(
@@ -421,6 +422,37 @@ class UserBot:
                     logger.error(f"[USERBOT] Failed to create new topic for user {message.from_user.id} in chat {chat_id}")
             else:
                 logger.error(f"[USERBOT] Error forwarding to user topic: {e}")
+
+    async def _forward_reply_to_user_topic(self, sent_message, user_id: int, chat_id: int, original_message_id: int):
+        """Пересылает ответ UserBot в тему пользователя для сохранения истории переписки"""
+        try:
+            # Получаем тему пользователя
+            user_topic_id = await self.topic_manager._get_active_user_topic(chat_id, user_id)
+            
+            if user_topic_id:
+                # Проверяем, был ли ответ уже отправлен в тему пользователя
+                # Если sent_message уже имеет message_thread_id равный user_topic_id, то не пересылаем
+                if hasattr(sent_message, 'message_thread_id') and sent_message.message_thread_id == user_topic_id:
+                    logger.info(f"[USERBOT][FORWARD] Reply already sent to user topic {user_topic_id}, skipping forwarding")
+                    return
+                
+                # Пересылаем ответ в тему пользователя только если он был отправлен не в тему
+                await self.bot.forward_message(
+                    chat_id=chat_id,
+                    from_chat_id=chat_id,
+                    message_id=sent_message.message_id,
+                    message_thread_id=user_topic_id
+                )
+                logger.info(f"[USERBOT][FORWARD] Reply forwarded to user topic {user_topic_id} for user {user_id}")
+            else:
+                logger.warning(f"[USERBOT][FORWARD] No user topic found for user {user_id} in chat {chat_id}")
+                
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "message thread not found" in error_msg:
+                logger.warning(f"[USERBOT][FORWARD] User topic not found, will skip forwarding reply")
+            else:
+                logger.error(f"[USERBOT][FORWARD] Error forwarding reply to user topic: {e}")
 
     async def _create_task_directly(self, message_data: dict, status: str = "unreacted") -> str:
         """Создает задачу напрямую без агрегатора"""
@@ -763,16 +795,19 @@ class UserBot:
             logger.info(f"[USERBOT][GROUPING] Опубликовано событие message_appended для задачи {task_id}")
             
             # Отправляем сообщение в пользовательскую тему, если она существует
-            # ИСПРАВЛЕНИЕ: используем message_source из задачи для определения необходимости пересылки
-            message_source = task.get('message_source', 'main_menu')
+            # ИСПРАВЛЕНИЕ: проверяем источник текущего сообщения, а не задачи
             try:
                 user_topic_id = await self.topic_manager.get_or_create_user_topic(
                     user_id=message.from_user.id,
                     chat_id=message.chat.id
                 )
                 
-                # Пересылаем сообщение в тему пользователя только если оно из главного меню
-                if user_topic_id and message_source == "main_menu":
+                # Проверяем, не пишет ли пользователь уже в своей теме
+                current_thread_id = getattr(message, 'message_thread_id', None)
+                user_in_own_topic = current_thread_id and current_thread_id == user_topic_id
+                
+                # Пересылаем сообщение в тему пользователя только если он не в своей теме
+                if user_topic_id and not user_in_own_topic:
                     # Пересылаем оригинальное сообщение пользователя в его тему
                     forwarded_message = await self.bot.forward_message(
                         chat_id=message.chat.id,
@@ -782,8 +817,8 @@ class UserBot:
                     )
                     
                     logger.info(f"[USERBOT][GROUPING] ✅ Переслано дополнительное сообщение {message.message_id} в тему пользователя {user_topic_id} (forwarded as {forwarded_message.message_id})")
-                elif message_source == "user_topic":
-                    logger.info(f"[USERBOT][GROUPING] Сообщение из темы пользователя, пересылка не требуется")
+                elif user_in_own_topic:
+                    logger.info(f"[USERBOT][GROUPING] Пользователь уже пишет в своей теме {user_topic_id}, пересылка не требуется")
                     
             except Exception as topic_error:
                 logger.warning(f"[USERBOT][GROUPING] Не удалось отправить сообщение в тему пользователя: {topic_error}")
@@ -1690,8 +1725,10 @@ class UserBot:
     async def _pubsub_message_handler(self, channel: str, message: dict):
         """Обработчик PubSub событий"""
         try:
+            logger.info(f"[USERBOT][PUBSUB] Received event on channel {channel}: {message}")
             message_type = message.get('type')
             task_id = message.get('task_id')
+            logger.info(f"[USERBOT][PUBSUB] Processing event type: {message_type}, task_id: {task_id}")
             
             if message_type == 'status_change':
                 await self._handle_status_change(task_id, message)
@@ -2771,6 +2808,9 @@ class UserBot:
                                     parse_mode="HTML"
                                 )
                                 logger.info(f"[USERBOT][MEDIA] Photo reply sent to user: {sent_message.message_id}")
+                                
+                                # Пересылаем ответ в тему пользователя
+                                await self._forward_reply_to_user_topic(sent_message, user_id, chat_id, message_id)
                             else:
                                 logger.warning(f"[USERBOT][MEDIA] Photo file not found: {photo_path}")
                                 raise FileNotFoundError(f"Photo file not found: {photo_path}")
@@ -2799,6 +2839,9 @@ class UserBot:
                                     parse_mode="HTML"
                                 )
                                 logger.info(f"[USERBOT][MEDIA] Video reply sent to user: {sent_message.message_id}")
+                                
+                                # Пересылаем ответ в тему пользователя
+                                await self._forward_reply_to_user_topic(sent_message, user_id, chat_id, message_id)
                             else:
                                 logger.warning(f"[USERBOT][MEDIA] Video file not found: {video_file_path}")
                                 raise FileNotFoundError(f"Video file not found: {video_file_path}")
@@ -2813,6 +2856,9 @@ class UserBot:
                                     parse_mode="HTML"
                                 )
                                 logger.info(f"[USERBOT] Text-only reply sent after video failure: {sent_message.message_id}")
+                                
+                                # Пересылаем ответ в тему пользователя
+                                await self._forward_reply_to_user_topic(sent_message, user_id, chat_id, message_id)
                     
                     # Отправляем документ
                     elif has_document and document_file_path:
@@ -2827,6 +2873,9 @@ class UserBot:
                                     parse_mode="HTML"
                                 )
                                 logger.info(f"[USERBOT][MEDIA] Document reply sent to user: {sent_message.message_id}")
+                                
+                                # Пересылаем ответ в тему пользователя
+                                await self._forward_reply_to_user_topic(sent_message, user_id, chat_id, message_id)
                             else:
                                 logger.warning(f"[USERBOT][MEDIA] Document file not found: {document_file_path}")
                                 raise FileNotFoundError(f"Document file not found: {document_file_path}")
@@ -2841,6 +2890,9 @@ class UserBot:
                                     parse_mode="HTML"
                                 )
                                 logger.info(f"[USERBOT] Text-only reply sent after document failure: {sent_message.message_id}")
+                                
+                                # Пересылаем ответ в тему пользователя
+                                await self._forward_reply_to_user_topic(sent_message, user_id, chat_id, message_id)
                     
                     # Если нет подходящих файлов, отправляем только текст
                     else:
@@ -2852,6 +2904,9 @@ class UserBot:
                                 parse_mode="HTML"
                             )
                             logger.info(f"[USERBOT] Text-only reply sent (no valid media files): {sent_message.message_id}")
+                            
+                            # Пересылаем ответ в тему пользователя
+                            await self._forward_reply_to_user_topic(sent_message, user_id, chat_id, message_id)
                 else:
                     # Отправляем обычный текстовый ответ
                     if reply_text:
@@ -2863,6 +2918,9 @@ class UserBot:
                         )
                         logger.info(f"[USERBOT] Text reply sent to user: {sent_message.message_id}")
                         
+                        # Пересылаем ответ в тему пользователя
+                        await self._forward_reply_to_user_topic(sent_message, user_id, chat_id, message_id)
+                        
             except Exception as reply_error:
                 logger.error(f"[USERBOT] Failed to send reply as reply, sending as regular message: {reply_error}")
                 # Если не удалось отправить как reply, отправляем как обычное сообщение
@@ -2873,6 +2931,9 @@ class UserBot:
                         parse_mode="HTML"
                     )
                     logger.info(f"[USERBOT] Reply sent as regular message: {sent_message.message_id}")
+                    
+                    # Пересылаем ответ в тему пользователя
+                    await self._forward_reply_to_user_topic(sent_message, user_id, chat_id, message_id)
             
         except Exception as e:
             logger.error(f"Error handling new reply for task {task_id}: {e}", exc_info=True)
@@ -2911,6 +2972,10 @@ class UserBot:
             user_message_id = message["user_message_id"]
             user_chat_id = message["user_chat_id"]
             
+            # Получаем user_id из задачи для пересылки в тему
+            task = await self.redis.get_task(task_id)
+            user_id = int(task["user_id"]) if task else None
+            
             # Проверяем наличие медиафайлов в ответе
             has_photo = message.get('has_photo', False)
             has_video = message.get('has_video', False)
@@ -2944,6 +3009,10 @@ class UserBot:
                                         parse_mode="HTML"
                                     )
                                     logger.info(f"[USERBOT][ADDITIONAL][MEDIA] Photo reply sent to user: {sent_message.message_id}")
+                                    
+                                    # Пересылаем ответ в тему пользователя
+                                    if user_id:
+                                        await self._forward_reply_to_user_topic(sent_message, user_id, user_chat_id, user_message_id)
                                 else:
                                     logger.warning(f"[USERBOT][ADDITIONAL][MEDIA] Photo file not found: {photo_path}")
                                     raise FileNotFoundError(f"Photo file not found: {photo_path}")
@@ -2958,6 +3027,10 @@ class UserBot:
                                         parse_mode="HTML"
                                     )
                                     logger.info(f"[USERBOT][ADDITIONAL] Text-only reply sent after photo failure: {sent_message.message_id}")
+                                    
+                                    # Пересылаем ответ в тему пользователя
+                                    if user_id:
+                                        await self._forward_reply_to_user_topic(sent_message, user_id, user_chat_id, user_message_id)
                         
                         # Отправляем видео
                         elif has_video and video_file_path:
@@ -2972,6 +3045,10 @@ class UserBot:
                                         parse_mode="HTML"
                                     )
                                     logger.info(f"[USERBOT][ADDITIONAL][MEDIA] Video reply sent to user: {sent_message.message_id}")
+                                    
+                                    # Пересылаем ответ в тему пользователя
+                                    if user_id:
+                                        await self._forward_reply_to_user_topic(sent_message, user_id, user_chat_id, user_message_id)
                                 else:
                                     logger.warning(f"[USERBOT][ADDITIONAL][MEDIA] Video file not found: {video_file_path}")
                                     raise FileNotFoundError(f"Video file not found: {video_file_path}")
@@ -2986,6 +3063,10 @@ class UserBot:
                                         parse_mode="HTML"
                                     )
                                     logger.info(f"[USERBOT][ADDITIONAL] Text-only reply sent after video failure: {sent_message.message_id}")
+                                    
+                                    # Пересылаем ответ в тему пользователя
+                                    if user_id:
+                                        await self._forward_reply_to_user_topic(sent_message, user_id, user_chat_id, user_message_id)
                         
                         # Отправляем документ
                         elif has_document and document_file_path:
@@ -3000,6 +3081,10 @@ class UserBot:
                                         parse_mode="HTML"
                                     )
                                     logger.info(f"[USERBOT][ADDITIONAL][MEDIA] Document reply sent to user: {sent_message.message_id}")
+                                    
+                                    # Пересылаем ответ в тему пользователя
+                                    if user_id:
+                                        await self._forward_reply_to_user_topic(sent_message, user_id, user_chat_id, user_message_id)
                                 else:
                                     logger.warning(f"[USERBOT][ADDITIONAL][MEDIA] Document file not found: {document_file_path}")
                                     raise FileNotFoundError(f"Document file not found: {document_file_path}")
@@ -3014,6 +3099,10 @@ class UserBot:
                                         parse_mode="HTML"
                                     )
                                     logger.info(f"[USERBOT][ADDITIONAL] Text-only reply sent after document failure: {sent_message.message_id}")
+                                    
+                                    # Пересылаем ответ в тему пользователя
+                                    if user_id:
+                                        await self._forward_reply_to_user_topic(sent_message, user_id, user_chat_id, user_message_id)
                         
                         # Если нет подходящих файлов, отправляем только текст
                         else:
@@ -3025,6 +3114,10 @@ class UserBot:
                                     parse_mode="HTML"
                                 )
                                 logger.info(f"[USERBOT][ADDITIONAL] Text-only reply sent (no valid media files): {sent_message.message_id}")
+                                
+                                # Пересылаем ответ в тему пользователя
+                                if user_id:
+                                    await self._forward_reply_to_user_topic(sent_message, user_id, user_chat_id, user_message_id)
                     else:
                         # Отправляем обычный текстовый ответ
                         if reply_text:
@@ -3036,6 +3129,10 @@ class UserBot:
                             )
                             logger.info(f"[USERBOT][ADDITIONAL] Text reply sent to user: {sent_message.message_id}")
                             
+                            # Пересылаем ответ в тему пользователя
+                            if user_id:
+                                await self._forward_reply_to_user_topic(sent_message, user_id, user_chat_id, user_message_id)
+                            
                 except Exception as reply_error:
                     logger.error(f"[USERBOT][ADDITIONAL] Failed to send reply as reply, sending as regular message: {reply_error}")
                     # Если не удалось отправить как reply, отправляем как обычное сообщение
@@ -3046,6 +3143,10 @@ class UserBot:
                             parse_mode="HTML"
                         )
                         logger.info(f"[USERBOT][ADDITIONAL] Reply sent as regular message: {sent_message.message_id}")
+                        
+                        # Пересылаем ответ в тему пользователя
+                        if user_id:
+                            await self._forward_reply_to_user_topic(sent_message, user_id, user_chat_id, user_message_id)
             
         except Exception as e:
             logger.error(f"Error handling additional reply: {e}", exc_info=True)
