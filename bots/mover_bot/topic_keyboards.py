@@ -74,3 +74,16 @@ def create_completed_topic_keyboard(task_id: str) -> InlineKeyboardMarkup:
     ]
     
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+def create_reply_keyboard(additional_message_id: str) -> InlineKeyboardMarkup:
+    """Создает клавиатуру с кнопкой 'Ответить' для дополнительного сообщения"""
+    buttons = [
+        [
+            InlineKeyboardButton(
+                text="💬 Ответить", 
+                callback_data=f"additional_reply_{additional_message_id}"
+            )
+        ]
+    ]
+    
+    return InlineKeyboardMarkup(inline_keyboard=buttons)

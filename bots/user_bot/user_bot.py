@@ -12,7 +12,7 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
 import aiogram.exceptions
 
 from core.redis_client import redis_client
@@ -407,11 +407,11 @@ class UserBot:
                     # Сохраняем новую тему
                     await self.topic_manager._save_user_topic(chat_id, message.from_user.id, new_topic_id)
                     
-                    # Повторяем попытку пересылки
                     try:
-                        await self.bot.send_message(
+                        await self.bot.forward_message(
                             chat_id=chat_id,
-                            text=forward_text,
+                            from_chat_id=chat_id,
+                            message_id=message.message_id,
                             message_thread_id=new_topic_id
                         )
                         logger.info(f"[USERBOT] Forwarded message to new user topic {new_topic_id} in chat {chat_id}")
@@ -723,13 +723,26 @@ class UserBot:
             logger.info(f"[USERBOT][GROUPING] Задача {task_id} обновлена: {new_count} сообщений")
             
             # Публикуем событие об обновлении задачи
+            # Получаем user_topic_id для корректного reply
+            user_topic_id = None
+            try:
+                user_topic_id = await self.topic_manager.get_or_create_user_topic(
+                    user_id=message.from_user.id,
+                    chat_id=message.chat.id
+                )
+            except Exception as topic_error:
+                logger.warning(f"[USERBOT][GROUPING] Не удалось получить user_topic_id: {topic_error}")
+            
             event_data = {
                 "type": "task_update",
                 "action": "message_appended",
                 "task_id": task_id,
                 "updated_text": new_message_text,
                 "message_count": new_count,
-                "has_media": has_media
+                "has_media": has_media,
+                "user_message_id": message.message_id,  # Критично важно для reply
+                "user_chat_id": message.chat.id,
+                "user_topic_id": user_topic_id
             }
             
             # Добавляем информацию о медиафайлах в событие
@@ -750,13 +763,16 @@ class UserBot:
             logger.info(f"[USERBOT][GROUPING] Опубликовано событие message_appended для задачи {task_id}")
             
             # Отправляем сообщение в пользовательскую тему, если она существует
+            # ИСПРАВЛЕНИЕ: используем message_source из задачи для определения необходимости пересылки
+            message_source = task.get('message_source', 'main_menu')
             try:
                 user_topic_id = await self.topic_manager.get_or_create_user_topic(
                     user_id=message.from_user.id,
                     chat_id=message.chat.id
                 )
                 
-                if user_topic_id and message.chat.id != settings.FORUM_CHAT_ID:
+                # Пересылаем сообщение в тему пользователя только если оно из главного меню
+                if user_topic_id and message_source == "main_menu":
                     # Пересылаем оригинальное сообщение пользователя в его тему
                     forwarded_message = await self.bot.forward_message(
                         chat_id=message.chat.id,
@@ -766,6 +782,8 @@ class UserBot:
                     )
                     
                     logger.info(f"[USERBOT][GROUPING] ✅ Переслано дополнительное сообщение {message.message_id} в тему пользователя {user_topic_id} (forwarded as {forwarded_message.message_id})")
+                elif message_source == "user_topic":
+                    logger.info(f"[USERBOT][GROUPING] Сообщение из темы пользователя, пересылка не требуется")
                     
             except Exception as topic_error:
                 logger.warning(f"[USERBOT][GROUPING] Не удалось отправить сообщение в тему пользователя: {topic_error}")
@@ -1670,24 +1688,16 @@ class UserBot:
             logger.error(f"PubSub listener error: {e}")
 
     async def _pubsub_message_handler(self, channel: str, message: dict):
-        """Обработчик сообщений от PubSub менеджера"""
+        """Обработчик PubSub событий"""
         try:
-            if channel == "task_updates":
-                await self._handle_task_update(message)
-        except Exception as e:
-            logger.error(f"Error handling PubSub message from {channel}: {e}")
-
-    async def _handle_task_update(self, update_data: dict):
-        """Обрабатывает обновления задач"""
-        try:
-            update_type = update_data.get('type')
-            task_id = update_data.get('task_id')
+            message_type = message.get('type')
+            task_id = message.get('task_id')
             
-            if update_type == 'status_change':
-                await self._handle_status_change(task_id, update_data)
-            elif update_type == 'new_reply':
-                await self._handle_new_reply(task_id, update_data)
-            elif update_type == 'task_deleted':
+            if message_type == 'status_change':
+                await self._handle_status_change(task_id, message)
+            elif message_type == 'new_reply':
+                await self._handle_new_reply_pubsub(message)
+            elif message_type == 'task_deleted':
                 # Обрабатываем удаление задачи - сбрасываем кэшированную информацию
                 logger.info(f"[USERBOT][TASK_DELETED] Task {task_id} was deleted, clearing any cached references")
                 # Удаляем задачу из processed_tasks если она там есть
@@ -1695,9 +1705,14 @@ class UserBot:
                     if cached_task_id == task_id:
                         del self.message_aggregator.processed_tasks[user_id]
                         logger.info(f"[USERBOT][TASK_DELETED] Cleared cached task {task_id} for user {user_id}")
-                
+            elif message_type == 'task_update':
+                # Обрабатываем обновление задачи
+                await self._handle_task_update(channel, message)
+            elif message_type == 'additional_message_reply':
+                # Обрабатываем ответ на дополнительное сообщение
+                await self._handle_additional_reply(message)
         except Exception as e:
-            logger.error(f"Error handling task update: {e}")
+            logger.error(f"Error handling task update: {e}", exc_info=True)
 
     async def _handle_status_change(self, task_id: str, update_data: dict):
         """Обрабатывает изменение статуса задачи"""
@@ -2023,6 +2038,566 @@ class UserBot:
 
 
 
+    async def _handle_additional_message_reply(self, update_data: dict):
+        """Обрабатывает ответы на дополнительные сообщения"""
+        try:
+            logger.info(f"Processing additional message reply: {update_data}")
+            
+            # Извлекаем данные из события
+            task_id = update_data.get('task_id')
+            reply_text = update_data.get('reply_text', '')
+            reply_author = update_data.get('reply_author', '')
+            user_message_id = update_data.get('user_message_id')
+            user_chat_id = update_data.get('user_chat_id')
+            user_topic_id = update_data.get('user_topic_id')
+            
+            if not all([task_id, user_message_id, user_chat_id]):
+                logger.error(f"Missing required data for additional message reply: task_id={task_id}, user_message_id={user_message_id}, user_chat_id={user_chat_id}")
+                return
+            
+            # Получаем задачу из Redis для определения источника сообщения
+            task = await self.redis.get_task(task_id)
+            if not task:
+                logger.error(f"Task {task_id} not found for additional message reply processing")
+                return
+            
+            message_source = task.get('message_source', 'main_menu')
+            
+            # Определяем, нужно ли пересылать ответ в тему пользователя
+            # Используем user_topic_id из события для определения источника текущего сообщения
+            current_message_from_user_topic = user_topic_id is not None and update_data.get('user_chat_id') == user_topic_id
+            should_forward_to_topic = False
+            if current_message_from_user_topic:
+                logger.info(f"Reply to additional message from user topic - sending direct reply only, no forwarding")
+                should_forward_to_topic = False
+            else:
+                logger.info(f"Reply to additional message from main menu - sending direct reply + forwarding to topic if available")
+                should_forward_to_topic = True
+            
+            # Отправляем ответ как reply к дополнительному сообщению пользователя
+            direct_reply_message_id = None
+            try:
+                # Проверяем наличие медиафайлов
+                has_media = any([
+                    update_data.get('reply_has_photo', False),
+                    update_data.get('reply_has_video', False),
+                    update_data.get('reply_has_document', False)
+                ])
+                
+                if has_media:
+                    # Отправляем медиа-ответ
+                    direct_reply_message_id = await self._send_media_reply_to_additional_message(
+                        user_chat_id, user_message_id, user_topic_id, 
+                        reply_text, reply_author, update_data
+                    )
+                else:
+                    # Отправляем текстовый ответ как reply к дополнительному сообщению
+                    message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}" if reply_text else "💬 <b>Ответ поддержки</b>"
+                    
+                    sent_message = await self.bot.send_message(
+                        chat_id=user_chat_id,
+                        text=message_text,
+                        reply_to_message_id=user_message_id,
+                        message_thread_id=user_topic_id if user_topic_id else None,
+                        parse_mode="HTML"
+                    )
+                    direct_reply_message_id = sent_message.message_id
+                
+                logger.info(f"Successfully sent additional message reply to user {user_chat_id}, message {user_message_id}")
+                
+            except Exception as send_error:
+                logger.error(f"Failed to send additional message reply: {send_error}")
+                return
+            
+            # Пересылаем ответ в тему пользователя, если нужно
+            if (should_forward_to_topic and user_topic_id and user_chat_id and 
+                direct_reply_message_id and message_source == "main_menu"):
+                try:
+                    logger.info(f"Forwarding direct reply message {direct_reply_message_id} to user topic {user_topic_id} in chat {user_chat_id}")
+                    await self.bot.forward_message(
+                        chat_id=user_chat_id,
+                        from_chat_id=user_chat_id,
+                        message_id=direct_reply_message_id,
+                        message_thread_id=user_topic_id
+                    )
+                    logger.info(f"Successfully forwarded direct reply to user topic {user_topic_id}")
+                except Exception as forward_e:
+                    logger.warning(f"Could not forward direct reply to user topic {user_topic_id}: {forward_e}")
+                    # Fallback: создаем текстовое сообщение в теме только если пересылка не удалась
+                    try:
+                        message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}" if reply_text else "💬 <b>Ответ поддержки</b>"
+                        await self.bot.send_message(
+                            chat_id=user_chat_id,
+                            text=message_text,
+                            message_thread_id=user_topic_id,
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"Sent fallback text message to user topic {user_topic_id}")
+                    except Exception as fallback_e:
+                        logger.error(f"Failed to send fallback message to user topic {user_topic_id}: {fallback_e}")
+            
+        except Exception as e:
+            logger.error(f"Error handling additional message reply: {e}", exc_info=True)
+
+    async def _send_media_reply_to_additional_message(self, chat_id: int, message_id: int, topic_id: int, reply_text: str, reply_author: str, update_data: dict):
+        """Отправляет медиа-ответ как reply к дополнительному сообщению"""
+        try:
+            message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}" if reply_text else "💬 <b>Ответ поддержки</b>"
+            media_sent = False
+            sent_message_id = None
+            
+            # Пытаемся отправить фото
+            if update_data.get('reply_has_photo') and update_data.get('reply_photo_file_ids'):
+                try:
+                    photo_file_ids = update_data.get('reply_photo_file_ids', [])
+                    if isinstance(photo_file_ids, str):
+                        import json
+                        photo_file_ids = json.loads(photo_file_ids)
+                    
+                    if photo_file_ids and isinstance(photo_file_ids, list):
+                        photo_file_id = photo_file_ids[-1]  # Берем наибольшее разрешение
+                        
+                        sent_message = await self.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=photo_file_id,
+                            caption=message_text,
+                            reply_to_message_id=message_id,
+                            message_thread_id=topic_id if topic_id else None,
+                            parse_mode="HTML"
+                        )
+                        sent_message_id = sent_message.message_id
+                        media_sent = True
+                        logger.info(f"Sent photo reply to additional message {message_id}")
+                        
+                except Exception as photo_error:
+                    logger.warning(f"Failed to send photo reply to additional message: {photo_error}")
+            
+            # Пытаемся отправить видео, если фото не отправилось
+            elif not media_sent and update_data.get('reply_has_video') and update_data.get('reply_video_file_id'):
+                try:
+                    video_file_id = update_data['reply_video_file_id']
+                    
+                    sent_message = await self.bot.send_video(
+                        chat_id=chat_id,
+                        video=video_file_id,
+                        caption=message_text,
+                        reply_to_message_id=message_id,
+                        message_thread_id=topic_id if topic_id else None,
+                        parse_mode="HTML"
+                    )
+                    sent_message_id = sent_message.message_id
+                    media_sent = True
+                    logger.info(f"Sent video reply to additional message {message_id}")
+                    
+                except Exception as video_error:
+                    logger.warning(f"Failed to send video reply to additional message: {video_error}")
+            
+            # Пытаемся отправить документ, если медиа не отправилось
+            elif not media_sent and update_data.get('reply_has_document') and update_data.get('reply_document_file_id'):
+                try:
+                    document_file_id = update_data['reply_document_file_id']
+                    
+                    sent_message = await self.bot.send_document(
+                        chat_id=chat_id,
+                        document=document_file_id,
+                        caption=message_text,
+                        reply_to_message_id=message_id,
+                        message_thread_id=topic_id if topic_id else None,
+                        parse_mode="HTML"
+                    )
+                    sent_message_id = sent_message.message_id
+                    media_sent = True
+                    logger.info(f"Sent document reply to additional message {message_id}")
+                    
+                except Exception as doc_error:
+                    logger.warning(f"Failed to send document reply to additional message: {doc_error}")
+            
+            # Если медиа не отправилось, отправляем текстовое сообщение
+            if not media_sent:
+                sent_message = await self.bot.send_message(
+                    chat_id=chat_id,
+                    text=message_text,
+                    reply_to_message_id=message_id,
+                    message_thread_id=topic_id if topic_id else None,
+                    parse_mode="HTML"
+                )
+                sent_message_id = sent_message.message_id
+                logger.info(f"Sent text reply to additional message {message_id} (media fallback)")
+            
+            return sent_message_id
+                
+        except Exception as e:
+            logger.error(f"Error sending media reply to additional message: {e}")
+            return None
+
+    async def _handle_task_reply(self, update_data: dict):
+        """Обрабатывает обычные ответы на задачи (события new_reply)"""
+        try:
+            logger.info(f"Processing task reply: {update_data}")
+            
+            # Извлекаем данные из события
+            task_id = update_data.get('task_id')
+            reply_text = update_data.get('reply_text', '')
+            reply_author = update_data.get('reply_author', '')
+            reply_message_id = update_data.get('reply_message_id')
+            reply_chat_id = update_data.get('reply_chat_id')
+            
+            if not task_id:
+                logger.error(f"Missing task_id in task reply event: {update_data}")
+                return
+            
+            # Получаем задачу из Redis
+            task = await self.redis.get_task(task_id)
+            if not task:
+                logger.error(f"Task {task_id} not found for reply processing")
+                return
+            
+            # Извлекаем данные пользователя и чата
+            user_id = task.get('user_id')
+            original_chat_id = int(task.get('chat_id', 0))  # Оригинальный чат пользователя
+            original_message_id = int(task.get('message_id', 0))
+            message_source = task.get('message_source', 'main_menu')
+            
+            # Используем chat_id из события для отправки reply
+            # reply_chat_id - это чат, где находится сообщение, на которое мы отвечаем
+            target_chat_id = reply_chat_id if reply_chat_id else original_chat_id
+            
+            if not all([user_id, target_chat_id, original_message_id]):
+                logger.error(f"Missing required task data: user_id={user_id}, target_chat_id={target_chat_id}, message_id={original_message_id}")
+                return
+            
+            # Получаем user_topic_id для пользователя
+            user_topic_id = None
+            try:
+                user_topic_id = await self.topic_manager.get_or_create_user_topic(
+                    user_id=int(user_id),
+                    chat_id=original_chat_id
+                )
+            except Exception as topic_error:
+                logger.warning(f"Could not get user topic for user {user_id}: {topic_error}")
+            
+            # Определяем, нужно ли пересылать ответ в тему пользователя
+            # Используем user_topic_id и reply_chat_id из события для определения источника текущего сообщения
+            current_message_from_user_topic = user_topic_id is not None and update_data.get('reply_chat_id') == user_topic_id
+            should_forward_to_topic = False
+            if current_message_from_user_topic:
+                logger.info(f"Reply to message from user topic - sending direct reply only, no forwarding")
+                should_forward_to_topic = False
+            else:
+                logger.info(f"Reply to message from main menu - sending direct reply + forwarding to topic if available")
+                should_forward_to_topic = True
+            
+            # Отправляем ответ как reply к основному сообщению задачи
+            direct_reply_message_id = None
+            try:
+                # Проверяем наличие медиафайлов
+                has_media = any([
+                    update_data.get('has_photo', False),
+                    update_data.get('has_video', False),
+                    update_data.get('has_document', False)
+                ])
+                
+                if has_media:
+                    # Отправляем медиа-ответ
+                    direct_reply_message_id = await self._send_media_reply_to_task(
+                        target_chat_id, original_message_id, user_topic_id, 
+                        reply_text, reply_author, update_data
+                    )
+                else:
+                    # Отправляем текстовый ответ как reply к основной задаче
+                    message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}" if reply_text else "💬 <b>Ответ поддержки</b>"
+                    
+                    sent_message = await self.bot.send_message(
+                        chat_id=target_chat_id,
+                        text=message_text,
+                        reply_to_message_id=original_message_id,
+                        message_thread_id=user_topic_id if user_topic_id else None,
+                        parse_mode="HTML"
+                    )
+                    direct_reply_message_id = sent_message.message_id
+                
+                logger.info(f"Successfully sent task reply to user {user_id}, chat {target_chat_id}, message {original_message_id}")
+                
+            except Exception as send_error:
+                logger.error(f"Failed to send task reply: {send_error}")
+                return
+            
+            # Пересылаем ответ в тему пользователя, если нужно
+            if (should_forward_to_topic and user_topic_id and target_chat_id and 
+                direct_reply_message_id and message_source == "main_menu"):
+                try:
+                    logger.info(f"Forwarding direct reply message {direct_reply_message_id} to user topic {user_topic_id} in chat {original_chat_id}")
+                    await self.bot.forward_message(
+                        chat_id=original_chat_id,
+                        from_chat_id=target_chat_id,
+                        message_id=direct_reply_message_id,
+                        message_thread_id=user_topic_id
+                    )
+                    logger.info(f"Successfully forwarded direct reply to user topic {user_topic_id}")
+                except Exception as forward_e:
+                    logger.warning(f"Could not forward direct reply to user topic {user_topic_id}: {forward_e}")
+                    # Fallback: создаем текстовое сообщение в теме только если пересылка не удалась
+                    try:
+                        message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}" if reply_text else "💬 <b>Ответ поддержки</b>"
+                        await self.bot.send_message(
+                            chat_id=original_chat_id,
+                            text=message_text,
+                            message_thread_id=user_topic_id,
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"Sent fallback text message to user topic {user_topic_id}")
+                    except Exception as fallback_e:
+                        logger.error(f"Failed to send fallback message to user topic {user_topic_id}: {fallback_e}")
+            
+        except Exception as e:
+            logger.error(f"Error handling task reply: {e}", exc_info=True)
+
+        logger.info(f"Processing task reply: {update_data}")
+        
+        # Извлекаем данные из события
+        task_id = update_data.get('task_id')
+        reply_text = update_data.get('reply_text', '')
+        reply_author = update_data.get('reply_author', '')
+        reply_message_id = update_data.get('reply_message_id')
+        reply_chat_id = update_data.get('reply_chat_id')
+        
+        if not task_id:
+            logger.error(f"Missing task_id in task reply event: {update_data}")
+            return
+        
+        # Получаем задачу из Redis
+        task = await self.redis.get_task(task_id)
+        if not task:
+            logger.error(f"Task {task_id} not found for reply processing")
+            return
+        
+        # Извлекаем данные пользователя и чата
+        user_id = task.get('user_id')
+        original_chat_id = int(task.get('chat_id', 0))  # Оригинальный чат пользователя
+        original_message_id = int(task.get('message_id', 0))
+        message_source = task.get('message_source', 'main_menu')
+        
+        # Используем chat_id из события для отправки reply
+        # reply_chat_id - это чат, где находится сообщение, на которое мы отвечаем
+        target_chat_id = reply_chat_id if reply_chat_id else original_chat_id
+        
+        if not all([user_id, target_chat_id, original_message_id]):
+            logger.error(f"Missing required task data: user_id={user_id}, target_chat_id={target_chat_id}, message_id={original_message_id}")
+            return
+        
+        # Получаем user_topic_id для пользователя
+        user_topic_id = None
+        try:
+            user_topic_id = await self.topic_manager.get_or_create_user_topic(
+                user_id=int(user_id),
+                chat_id=original_chat_id
+            )
+            
+            if not task_id:
+                logger.error(f"Missing task_id in task reply event: {update_data}")
+                return
+            
+            # Получаем задачу из Redis
+            task = await self.redis.get_task(task_id)
+            if not task:
+                logger.error(f"Task {task_id} not found for reply processing")
+                return
+            
+            # Извлекаем данные пользователя и чата
+            user_id = task.get('user_id')
+            original_chat_id = int(task.get('chat_id', 0))  # Оригинальный чат пользователя
+            original_message_id = int(task.get('message_id', 0))
+            message_source = task.get('message_source', 'main_menu')
+            
+            # Используем chat_id из события для отправки reply
+            # reply_chat_id - это чат, где находится сообщение, на которое мы отвечаем
+            target_chat_id = reply_chat_id if reply_chat_id else original_chat_id
+            
+            if not all([user_id, target_chat_id, original_message_id]):
+                logger.error(f"Missing required task data: user_id={user_id}, target_chat_id={target_chat_id}, message_id={original_message_id}")
+                return
+            
+            # Получаем user_topic_id для пользователя
+            user_topic_id = None
+            try:
+                user_topic_id = await self.topic_manager.get_or_create_user_topic(
+                    user_id=int(user_id),
+                    chat_id=original_chat_id
+                )
+            except Exception as topic_error:
+                logger.warning(f"Could not get user topic for user {user_id}: {topic_error}")
+            
+            # Определяем, нужно ли пересылать ответ в тему пользователя
+            # Используем user_topic_id и reply_chat_id из события для определения источника текущего сообщения
+            current_message_from_user_topic = user_topic_id is not None and update_data.get('reply_chat_id') == user_topic_id
+            should_forward_to_topic = False
+            if current_message_from_user_topic:
+                logger.info(f"Reply to message from user topic - sending direct reply only, no forwarding")
+                should_forward_to_topic = False
+            else:
+                logger.info(f"Reply to message from main menu - sending direct reply + forwarding to topic if available")
+                should_forward_to_topic = True
+            
+            # Отправляем ответ как reply к основному сообщению задачи
+            direct_reply_message_id = None
+            try:
+                # Проверяем наличие медиафайлов
+                has_media = any([
+                    update_data.get('has_photo', False),
+                    update_data.get('has_video', False),
+                    update_data.get('has_document', False)
+                ])
+                
+                if has_media:
+                    # Отправляем медиа-ответ
+                    direct_reply_message_id = await self._send_media_reply_to_task(
+                        target_chat_id, original_message_id, user_topic_id, 
+                        reply_text, reply_author, update_data
+                    )
+                else:
+                    # Отправляем текстовый ответ как reply к основной задаче
+                    message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}" if reply_text else "💬 <b>Ответ поддержки</b>"
+                    
+                    sent_message = await self.bot.send_message(
+                        chat_id=target_chat_id,
+                        text=message_text,
+                        reply_to_message_id=original_message_id,
+                        message_thread_id=user_topic_id if user_topic_id else None,
+                        parse_mode="HTML"
+                    )
+                    direct_reply_message_id = sent_message.message_id
+                
+                logger.info(f"Successfully sent task reply to user {user_id}, chat {target_chat_id}, message {original_message_id}")
+                
+            except Exception as send_error:
+                logger.error(f"Failed to send task reply: {send_error}")
+                return
+            
+            # Пересылаем ответ в тему пользователя, если нужно
+            if (should_forward_to_topic and user_topic_id and target_chat_id and 
+                direct_reply_message_id and message_source == "main_menu"):
+                try:
+                    logger.info(f"Forwarding direct reply message {direct_reply_message_id} to user topic {user_topic_id} in chat {original_chat_id}")
+                    await self.bot.forward_message(
+                        chat_id=original_chat_id,
+                        from_chat_id=target_chat_id,
+                        message_id=direct_reply_message_id,
+                        message_thread_id=user_topic_id
+                    )
+                    logger.info(f"Successfully forwarded direct reply to user topic {user_topic_id}")
+                except Exception as forward_e:
+                    logger.warning(f"Could not forward direct reply to user topic {user_topic_id}: {forward_e}")
+                    # Fallback: создаем текстовое сообщение в теме только если пересылка не удалась
+                    try:
+                        message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}" if reply_text else "💬 <b>Ответ поддержки</b>"
+                        await self.bot.send_message(
+                            chat_id=original_chat_id,
+                            text=message_text,
+                            message_thread_id=user_topic_id,
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"Sent fallback text message to user topic {user_topic_id}")
+                    except Exception as fallback_e:
+                        logger.error(f"Failed to send fallback message to user topic {user_topic_id}: {fallback_e}")
+                except Exception as e:
+                    logger.error(f"Error handling task reply: {e}", exc_info=True)
+
+        except Exception as e:
+            logger.error(f"Error handling task reply: {e}", exc_info=True)
+
+    async def _send_media_reply_to_task(self, chat_id: int, message_id: int, topic_id: int, reply_text: str, reply_author: str, update_data: dict):
+        """Отправляет медиа-ответ как reply к основной задаче"""
+        try:
+            message_text = f"💬 <b>Ответ поддержки:</b>\n\n{reply_text}" if reply_text else "💬 <b>Ответ поддержки</b>"
+            media_sent = False
+            sent_message_id = None
+            
+            # Пытаемся отправить фото
+            if update_data.get('has_photo') and update_data.get('photo_file_ids'):
+                try:
+                    photo_file_ids = update_data.get('photo_file_ids', [])
+                    if isinstance(photo_file_ids, str):
+                        import json
+                        photo_file_ids = json.loads(photo_file_ids)
+                    
+                    if photo_file_ids and isinstance(photo_file_ids, list):
+                        photo_file_id = photo_file_ids[-1]  # Берем наибольшее разрешение
+                        
+                        sent_message = await self.bot.send_photo(
+                            chat_id=chat_id,
+                            photo=photo_file_id,
+                            caption=message_text,
+                            reply_to_message_id=message_id,
+                            message_thread_id=topic_id if topic_id else None,
+                            parse_mode="HTML"
+                        )
+                        sent_message_id = sent_message.message_id
+                        media_sent = True
+                        logger.info(f"Sent photo reply to task message {message_id}")
+                        
+                except Exception as photo_error:
+                    logger.warning(f"Failed to send photo reply to task: {photo_error}")
+            
+            # Пытаемся отправить видео, если фото не отправилось
+            elif not media_sent and update_data.get('has_video') and update_data.get('video_file_id'):
+                try:
+                    video_file_id = update_data['video_file_id']
+                    
+                    sent_message = await self.bot.send_video(
+                        chat_id=chat_id,
+                        video=video_file_id,
+                        caption=message_text,
+                        reply_to_message_id=message_id,
+                        message_thread_id=topic_id if topic_id else None,
+                        parse_mode="HTML"
+                    )
+                    sent_message_id = sent_message.message_id
+                    media_sent = True
+                    logger.info(f"Sent video reply to task message {message_id}")
+                    
+                except Exception as video_error:
+                    logger.warning(f"Failed to send video reply to task: {video_error}")
+            
+            # Пытаемся отправить документ, если медиа не отправилось
+            elif not media_sent and update_data.get('has_document') and update_data.get('document_file_id'):
+                try:
+                    document_file_id = update_data['document_file_id']
+                    
+                    sent_message = await self.bot.send_document(
+                        chat_id=chat_id,
+                        document=document_file_id,
+                        caption=message_text,
+                        reply_to_message_id=message_id,
+                        message_thread_id=topic_id if topic_id else None,
+                        parse_mode="HTML"
+                    )
+                    sent_message_id = sent_message.message_id
+                    media_sent = True
+                    logger.info(f"Sent document reply to task message {message_id}")
+                    
+                except Exception as doc_error:
+                    logger.warning(f"Failed to send document reply to task: {doc_error}")
+            
+            # Если медиа не отправилось, отправляем текстовое сообщение
+            if not media_sent:
+                sent_message = await self.bot.send_message(
+                    chat_id=chat_id,
+                    text=message_text,
+                    reply_to_message_id=message_id,
+                    message_thread_id=topic_id if topic_id else None,
+                    parse_mode="HTML"
+                )
+                sent_message_id = sent_message.message_id
+                logger.info(f"Sent text reply to task message {message_id} (media fallback)")
+            
+            return sent_message_id
+                
+        except Exception as e:
+            logger.error(f"Error sending media reply to task: {e}")
+            return None
+
+
+
     async def start_polling(self):
         """Запуск бота в режиме polling с полной инициализацией"""
         try:
@@ -2077,14 +2652,403 @@ class UserBot:
             # Запускаем фоновые задачи
             self._start_background_tasks()
             
+            # Небольшая задержка для синхронизации с TaskBot
+            logger.info("[USERBOT][STEP 0.5] Waiting for TaskBot to subscribe to channels...")
+            await asyncio.sleep(2)  # 2 секунды должно быть достаточно
+            
             # Запускаем polling
-            logger.info("[USERBOT][STEP 0.5] Starting polling...")
+            logger.info("[USERBOT][STEP 0.6] Starting polling...")
             await self.dp.start_polling(self.bot)
             
         except Exception as e:
             logger.error(f"[USERBOT][ERROR] Failed to start UserBot: {e}", exc_info=True)
         finally:
             await self.bot.session.close()
+
+    async def _handle_status_change(self, task_id: str, update_data: dict):
+        """Обрабатывает изменение статуса задачи"""
+        try:
+            new_status = update_data.get('new_status')
+            logger.info(f"[USERBOT][REACTION] Processing status change for task {task_id}: {new_status}")
+            
+            # Получаем задачу из Redis
+            task = await self.redis.get_task(task_id)
+            if not task:
+                logger.warning(f"[USERBOT][REACTION] Task {task_id} not found in Redis")
+                return
+            
+            user_id = int(task.get('user_id', 0))
+            chat_id = int(task.get('chat_id', 0))
+            message_id = int(task.get('message_id', 0))
+            
+            # Обновляем статус задачи
+            if new_status:
+                # Обновляем исполнителя если указан
+                assignee = update_data.get("assignee", task.get("assignee"))
+                
+                # Сохраняем обновленную задачу
+                await self.redis.update_task(task_id, status=new_status, assignee=assignee)
+                logger.info(f"[USERBOT] Task {task_id} status updated to {new_status}")
+            
+            # Устанавливаем соответствующую реакцию
+            reaction_map = {
+                'waiting': '⚡',      # Стала задачей
+                'in_progress': '⚡',  # Взята в работу (изменено с 🔥 на ⚡)
+                'completed': '👌'     # Завершена (изменено с ✅ на 👌)
+            }
+            
+            if new_status in reaction_map:
+                try:
+                    await self.bot.set_message_reaction(
+                        chat_id=chat_id,
+                        message_id=message_id,
+                        reaction=[{"type": "emoji", "emoji": reaction_map[new_status]}]
+                    )
+                    logger.info(f"[USERBOT][REACTION] Set reaction {reaction_map[new_status]} for task {task_id}")
+                except Exception as e:
+                    logger.warning(f"[USERBOT][REACTION] Could not set status reaction: {e}")
+                    
+        except Exception as e:
+            logger.error(f"Error handling status change: {e}", exc_info=True)
+    
+    async def _handle_new_reply_pubsub(self, message: dict):
+        """Обрабатывает новый ответ на задачу из PubSub"""
+        try:
+            logger.info(f"[USERBOT] Handling new reply from PubSub: {message}")
+            
+            task_id = message["task_id"]
+            reply_text = message["reply_text"]
+            reply_author = message["reply_author"]
+            
+            # Получаем текущую задачу
+            task = await self.redis.get_task(task_id)
+            if not task:
+                logger.warning(f"[USERBOT] Task {task_id} not found for new reply")
+                return
+            
+            # Обновляем задачу с ответом
+            await self.redis.update_task(
+                task_id, 
+                reply=reply_text,
+                reply_author=reply_author,
+                reply_at=message.get("reply_at", datetime.now().isoformat())
+            )
+            logger.info(f"[USERBOT] Reply saved to task {task_id}")
+            
+            # Отправляем ответ пользователю
+            user_id = int(task["user_id"])
+            chat_id = int(task["chat_id"])
+            message_id = int(task["message_id"])
+            
+            # Проверяем наличие медиафайлов в ответе
+            has_photo = message.get('has_photo', False)
+            has_video = message.get('has_video', False)
+            has_document = message.get('has_document', False)
+            reply_support_media_message_id = message.get('reply_support_media_message_id')
+            
+            logger.info(f"[USERBOT][MEDIA] Reply media info: photo={has_photo}, video={has_video}, doc={has_document}, media_msg_id={reply_support_media_message_id}")
+            
+            try:
+                # Если есть медиафайлы, отправляем их из локальных файлов
+                if has_photo or has_video or has_document:
+                    photo_file_paths = message.get('photo_file_paths', [])
+                    video_file_path = message.get('video_file_path')
+                    document_file_path = message.get('document_file_path')
+                    
+                    logger.info(f"[USERBOT][MEDIA] Reply media files: photo={photo_file_paths}, video={video_file_path}, doc={document_file_path}")
+                    
+                    # Отправляем фото
+                    if has_photo and photo_file_paths:
+                        try:
+                            photo_path = photo_file_paths[0]  # Берём первое фото
+                            if os.path.exists(photo_path):
+                                photo_file = FSInputFile(photo_path)
+                                sent_message = await self.bot.send_photo(
+                                    chat_id=chat_id,
+                                    photo=photo_file,
+                                    caption=f"✅ <b>Ответ:</b>\n\n{reply_text}" if reply_text else "✅ <b>Ответ</b>",
+                                    reply_to_message_id=message_id,
+                                    parse_mode="HTML"
+                                )
+                                logger.info(f"[USERBOT][MEDIA] Photo reply sent to user: {sent_message.message_id}")
+                            else:
+                                logger.warning(f"[USERBOT][MEDIA] Photo file not found: {photo_path}")
+                                raise FileNotFoundError(f"Photo file not found: {photo_path}")
+                        except Exception as photo_error:
+                            logger.error(f"[USERBOT][MEDIA] Failed to send photo reply: {photo_error}")
+                            # Fallback к текстовому сообщению
+                            if reply_text:
+                                sent_message = await self.bot.send_message(
+                                    chat_id=chat_id,
+                                    text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                                    reply_to_message_id=message_id,
+                                    parse_mode="HTML"
+                                )
+                                logger.info(f"[USERBOT] Text-only reply sent after photo failure: {sent_message.message_id}")
+                    
+                    # Отправляем видео
+                    elif has_video and video_file_path:
+                        try:
+                            if os.path.exists(video_file_path):
+                                video_file = FSInputFile(video_file_path)
+                                sent_message = await self.bot.send_video(
+                                    chat_id=chat_id,
+                                    video=video_file,
+                                    caption=f"✅ <b>Ответ:</b>\n\n{reply_text}" if reply_text else "✅ <b>Ответ</b>",
+                                    reply_to_message_id=message_id,
+                                    parse_mode="HTML"
+                                )
+                                logger.info(f"[USERBOT][MEDIA] Video reply sent to user: {sent_message.message_id}")
+                            else:
+                                logger.warning(f"[USERBOT][MEDIA] Video file not found: {video_file_path}")
+                                raise FileNotFoundError(f"Video file not found: {video_file_path}")
+                        except Exception as video_error:
+                            logger.error(f"[USERBOT][MEDIA] Failed to send video reply: {video_error}")
+                            # Fallback к текстовому сообщению
+                            if reply_text:
+                                sent_message = await self.bot.send_message(
+                                    chat_id=chat_id,
+                                    text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                                    reply_to_message_id=message_id,
+                                    parse_mode="HTML"
+                                )
+                                logger.info(f"[USERBOT] Text-only reply sent after video failure: {sent_message.message_id}")
+                    
+                    # Отправляем документ
+                    elif has_document and document_file_path:
+                        try:
+                            if os.path.exists(document_file_path):
+                                document_file = FSInputFile(document_file_path)
+                                sent_message = await self.bot.send_document(
+                                    chat_id=chat_id,
+                                    document=document_file,
+                                    caption=f"✅ <b>Ответ:</b>\n\n{reply_text}" if reply_text else "✅ <b>Ответ</b>",
+                                    reply_to_message_id=message_id,
+                                    parse_mode="HTML"
+                                )
+                                logger.info(f"[USERBOT][MEDIA] Document reply sent to user: {sent_message.message_id}")
+                            else:
+                                logger.warning(f"[USERBOT][MEDIA] Document file not found: {document_file_path}")
+                                raise FileNotFoundError(f"Document file not found: {document_file_path}")
+                        except Exception as doc_error:
+                            logger.error(f"[USERBOT][MEDIA] Failed to send document reply: {doc_error}")
+                            # Fallback к текстовому сообщению
+                            if reply_text:
+                                sent_message = await self.bot.send_message(
+                                    chat_id=chat_id,
+                                    text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                                    reply_to_message_id=message_id,
+                                    parse_mode="HTML"
+                                )
+                                logger.info(f"[USERBOT] Text-only reply sent after document failure: {sent_message.message_id}")
+                    
+                    # Если нет подходящих файлов, отправляем только текст
+                    else:
+                        if reply_text:
+                            sent_message = await self.bot.send_message(
+                                chat_id=chat_id,
+                                text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                                reply_to_message_id=message_id,
+                                parse_mode="HTML"
+                            )
+                            logger.info(f"[USERBOT] Text-only reply sent (no valid media files): {sent_message.message_id}")
+                else:
+                    # Отправляем обычный текстовый ответ
+                    if reply_text:
+                        sent_message = await self.bot.send_message(
+                            chat_id=chat_id,
+                            text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                            reply_to_message_id=message_id,
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"[USERBOT] Text reply sent to user: {sent_message.message_id}")
+                        
+            except Exception as reply_error:
+                logger.error(f"[USERBOT] Failed to send reply as reply, sending as regular message: {reply_error}")
+                # Если не удалось отправить как reply, отправляем как обычное сообщение
+                if reply_text:
+                    sent_message = await self.bot.send_message(
+                        chat_id=chat_id,
+                        text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                        parse_mode="HTML"
+                    )
+                    logger.info(f"[USERBOT] Reply sent as regular message: {sent_message.message_id}")
+            
+        except Exception as e:
+            logger.error(f"Error handling new reply for task {task_id}: {e}", exc_info=True)
+    
+    async def _handle_task_update(self, channel: str, message: dict):
+        """Обрабатывает обновления задач из PubSub"""
+        try:
+            logger.info(f"[USERBOT] Received task update: {message}")
+            event_type = message.get("type")
+            
+            if event_type == "task_update":
+                # Обновляем текст задачи
+                task_id = message["task_id"]
+                new_text = message.get("updated_text", "")
+                
+                # Получаем текущую задачу
+                task = await self.redis.get_task(task_id)
+                if task:
+                    # Обновляем текст задачи
+                    task["text"] = new_text
+                    await self.redis.set_task(task_id, task)
+                    
+                    logger.info(f"[USERBOT] Task {task_id} text updated")
+            
+        except Exception as e:
+            logger.error(f"Error handling task update: {e}", exc_info=True)
+    
+    async def _handle_additional_reply(self, message: dict):
+        """Обрабатывает ответ на дополнительное сообщение"""
+        try:
+            logger.info(f"[USERBOT] Handling additional reply: {message}")
+            
+            task_id = message["task_id"]
+            reply_text = message["reply_text"]
+            reply_author = message["reply_author"]
+            user_message_id = message["user_message_id"]
+            user_chat_id = message["user_chat_id"]
+            
+            # Проверяем наличие медиафайлов в ответе
+            has_photo = message.get('has_photo', False)
+            has_video = message.get('has_video', False)
+            has_document = message.get('has_document', False)
+            reply_support_media_message_id = message.get('reply_support_media_message_id')
+            
+            logger.info(f"[USERBOT][ADDITIONAL][MEDIA] Reply media info: photo={has_photo}, video={has_video}, doc={has_document}, media_msg_id={reply_support_media_message_id}")
+            
+            # Отправляем ответ пользователю
+            if user_message_id and user_chat_id:
+                try:
+                    # Если есть медиафайлы, отправляем их из локальных файлов
+                    if has_photo or has_video or has_document:
+                        photo_file_paths = message.get('photo_file_paths', [])
+                        video_file_path = message.get('video_file_path')
+                        document_file_path = message.get('document_file_path')
+                        
+                        logger.info(f"[USERBOT][ADDITIONAL][MEDIA] Reply media files: photo={photo_file_paths}, video={video_file_path}, doc={document_file_path}")
+                        
+                        # Отправляем фото
+                        if has_photo and photo_file_paths:
+                            try:
+                                photo_path = photo_file_paths[0]  # Берём первое фото
+                                if os.path.exists(photo_path):
+                                    photo_file = FSInputFile(photo_path)
+                                    sent_message = await self.bot.send_photo(
+                                        chat_id=user_chat_id,
+                                        photo=photo_file,
+                                        caption=f"✅ <b>Ответ:</b>\n\n{reply_text}" if reply_text else "✅ <b>Ответ</b>",
+                                        reply_to_message_id=user_message_id,
+                                        parse_mode="HTML"
+                                    )
+                                    logger.info(f"[USERBOT][ADDITIONAL][MEDIA] Photo reply sent to user: {sent_message.message_id}")
+                                else:
+                                    logger.warning(f"[USERBOT][ADDITIONAL][MEDIA] Photo file not found: {photo_path}")
+                                    raise FileNotFoundError(f"Photo file not found: {photo_path}")
+                            except Exception as photo_error:
+                                logger.error(f"[USERBOT][ADDITIONAL][MEDIA] Failed to send photo reply: {photo_error}")
+                                # Fallback к текстовому сообщению
+                                if reply_text:
+                                    sent_message = await self.bot.send_message(
+                                        chat_id=user_chat_id,
+                                        text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                                        reply_to_message_id=user_message_id,
+                                        parse_mode="HTML"
+                                    )
+                                    logger.info(f"[USERBOT][ADDITIONAL] Text-only reply sent after photo failure: {sent_message.message_id}")
+                        
+                        # Отправляем видео
+                        elif has_video and video_file_path:
+                            try:
+                                if os.path.exists(video_file_path):
+                                    video_file = FSInputFile(video_file_path)
+                                    sent_message = await self.bot.send_video(
+                                        chat_id=user_chat_id,
+                                        video=video_file,
+                                        caption=f"✅ <b>Ответ:</b>\n\n{reply_text}" if reply_text else "✅ <b>Ответ</b>",
+                                        reply_to_message_id=user_message_id,
+                                        parse_mode="HTML"
+                                    )
+                                    logger.info(f"[USERBOT][ADDITIONAL][MEDIA] Video reply sent to user: {sent_message.message_id}")
+                                else:
+                                    logger.warning(f"[USERBOT][ADDITIONAL][MEDIA] Video file not found: {video_file_path}")
+                                    raise FileNotFoundError(f"Video file not found: {video_file_path}")
+                            except Exception as video_error:
+                                logger.error(f"[USERBOT][ADDITIONAL][MEDIA] Failed to send video reply: {video_error}")
+                                # Fallback к текстовому сообщению
+                                if reply_text:
+                                    sent_message = await self.bot.send_message(
+                                        chat_id=user_chat_id,
+                                        text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                                        reply_to_message_id=user_message_id,
+                                        parse_mode="HTML"
+                                    )
+                                    logger.info(f"[USERBOT][ADDITIONAL] Text-only reply sent after video failure: {sent_message.message_id}")
+                        
+                        # Отправляем документ
+                        elif has_document and document_file_path:
+                            try:
+                                if os.path.exists(document_file_path):
+                                    document_file = FSInputFile(document_file_path)
+                                    sent_message = await self.bot.send_document(
+                                        chat_id=user_chat_id,
+                                        document=document_file,
+                                        caption=f"✅ <b>Ответ:</b>\n\n{reply_text}" if reply_text else "✅ <b>Ответ</b>",
+                                        reply_to_message_id=user_message_id,
+                                        parse_mode="HTML"
+                                    )
+                                    logger.info(f"[USERBOT][ADDITIONAL][MEDIA] Document reply sent to user: {sent_message.message_id}")
+                                else:
+                                    logger.warning(f"[USERBOT][ADDITIONAL][MEDIA] Document file not found: {document_file_path}")
+                                    raise FileNotFoundError(f"Document file not found: {document_file_path}")
+                            except Exception as doc_error:
+                                logger.error(f"[USERBOT][ADDITIONAL][MEDIA] Failed to send document reply: {doc_error}")
+                                # Fallback к текстовому сообщению
+                                if reply_text:
+                                    sent_message = await self.bot.send_message(
+                                        chat_id=user_chat_id,
+                                        text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                                        reply_to_message_id=user_message_id,
+                                        parse_mode="HTML"
+                                    )
+                                    logger.info(f"[USERBOT][ADDITIONAL] Text-only reply sent after document failure: {sent_message.message_id}")
+                        
+                        # Если нет подходящих файлов, отправляем только текст
+                        else:
+                            if reply_text:
+                                sent_message = await self.bot.send_message(
+                                    chat_id=user_chat_id,
+                                    text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                                    reply_to_message_id=user_message_id,
+                                    parse_mode="HTML"
+                                )
+                                logger.info(f"[USERBOT][ADDITIONAL] Text-only reply sent (no valid media files): {sent_message.message_id}")
+                    else:
+                        # Отправляем обычный текстовый ответ
+                        if reply_text:
+                            sent_message = await self.bot.send_message(
+                                chat_id=user_chat_id,
+                                text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                                reply_to_message_id=user_message_id,
+                                parse_mode="HTML"
+                            )
+                            logger.info(f"[USERBOT][ADDITIONAL] Text reply sent to user: {sent_message.message_id}")
+                            
+                except Exception as reply_error:
+                    logger.error(f"[USERBOT][ADDITIONAL] Failed to send reply as reply, sending as regular message: {reply_error}")
+                    # Если не удалось отправить как reply, отправляем как обычное сообщение
+                    if reply_text:
+                        sent_message = await self.bot.send_message(
+                            chat_id=user_chat_id,
+                            text=f"✅ <b>Ответ:</b>\n\n{reply_text}",
+                            parse_mode="HTML"
+                        )
+                        logger.info(f"[USERBOT][ADDITIONAL] Reply sent as regular message: {sent_message.message_id}")
+            
+        except Exception as e:
+            logger.error(f"Error handling additional reply: {e}", exc_info=True)
 
 # Создание экземпляра бота
 user_bot_instance = UserBot()

@@ -14,7 +14,7 @@ from typing import Dict, Optional, Any
 from core.redis_client import redis_client
 from core.pubsub_manager import MoverBotPubSubManager
 from bots.task_bot.redis_manager import RedisManager
-from .topic_keyboards import create_unreacted_topic_keyboard, create_executor_topic_keyboard, create_completed_topic_keyboard
+from .topic_keyboards import create_unreacted_topic_keyboard, create_executor_topic_keyboard, create_completed_topic_keyboard, create_reply_keyboard
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -24,6 +24,7 @@ from aiogram import Dispatcher
 
 class ReplyState(StatesGroup):
     waiting_for_reply = State()
+    waiting_for_additional_reply = State()
 
 class MoverBot:
     async def start_polling(self):
@@ -66,6 +67,7 @@ class MoverBot:
         }
         self.reminder_tasks = {}
         self.waiting_replies: Dict[int, str] = {}  # {user_id: task_id}
+        self.waiting_additional_replies: Dict[int, str] = {}  # {user_id: additional_message_id}
         self.pubsub_manager = MoverBotPubSubManager(bot_instance=self)
         
         # Регистрируем обработчики callback-ов для новых кнопок
@@ -113,6 +115,18 @@ class MoverBot:
             task_id = callback.data.split("_", 2)[2]
             await self._handle_reopen_task(callback, task_id)
         
+        # Обработчик для кнопки "Ответить" на дополнительное сообщение
+        @self.dp.callback_query(F.data.startswith("additional_reply_"))
+        async def handle_additional_reply(callback, state: FSMContext):
+            # Парсим callback_data для получения additional_message_id
+            parts = callback.data.split("_")
+            if len(parts) >= 3:
+                # Восстанавливаем additional_message_id из частей (может содержать подчеркивания)
+                additional_message_id = "_".join(parts[2:])
+                await self._handle_reply_additional_message(callback, additional_message_id, state)
+            else:
+                await callback.answer("Ошибка: неверный формат данных кнопки", show_alert=True)
+        
         # Обработчик сообщений в состоянии ожидания ответа
         @self.dp.message(ReplyState.waiting_for_reply)
         async def handle_reply_message(message, state: FSMContext):
@@ -123,6 +137,18 @@ class MoverBot:
                 # Передаём объект сообщения для обработки медиафайлов
                 await self._save_reply(task_id, message.text or message.caption or "", message.from_user.username, message.message_id, message.chat.id, message)
                 await message.reply("✅ Ответ сохранён и отправлен пользователю!")
+                await state.clear()
+        
+        # Обработчик сообщений в состоянии ожидания ответа на дополнительное сообщение
+        @self.dp.message(ReplyState.waiting_for_additional_reply)
+        async def handle_additional_reply_message(message, state: FSMContext):
+            user_id = message.from_user.id
+            if user_id in self.waiting_additional_replies:
+                additional_message_id = self.waiting_additional_replies.pop(user_id)
+                logger.info(f"Received additional reply for message {additional_message_id} from {message.from_user.username}")
+                # Передаём объект сообщения для обработки медиафайлов
+                await self._save_additional_reply(additional_message_id, message.text or message.caption or "", message.from_user.username, message.message_id, message.chat.id, message)
+                await message.reply("✅ Ответ на дополнительное сообщение сохранён и отправлен пользователю!")
                 await state.clear()
     
     async def _handle_take_task(self, callback, task_id: str):
@@ -253,6 +279,20 @@ class MoverBot:
             logger.error(f"Ошибка при ответе на задачу: {e}")
             await callback.answer("Ошибка при ответе на задачу", show_alert=True)
     
+    async def _handle_reply_additional_message(self, callback, additional_message_id: str, state: FSMContext):
+        """Обрабатывает нажатие кнопки 'Ответить' на дополнительное сообщение"""
+        try:
+            # Устанавливаем состояние ожидания ответа на дополнительное сообщение
+            await callback.answer("Введите ваш ответ на дополнительное сообщение:")
+            self.waiting_additional_replies[callback.from_user.id] = additional_message_id
+            await state.set_state(ReplyState.waiting_for_additional_reply)
+            
+            logger.info(f"Waiting additional reply for message {additional_message_id} from {callback.from_user.username}")
+            
+        except Exception as e:
+            logger.error(f"Ошибка при ответе на дополнительное сообщение: {e}")
+            await callback.answer("Ошибка при ответе на дополнительное сообщение", show_alert=True)
+    
     async def _save_reply(self, task_id: str, reply_text: str, username: str, reply_message_id: int, reply_chat_id: int, message=None):
         """Сохраняет ответ к задаче и уведомляет UserBot"""
         try:
@@ -309,6 +349,109 @@ class MoverBot:
             
         except Exception as e:
             logger.error(f"Error saving reply for task {task_id}: {e}", exc_info=True)
+    
+    async def _save_additional_reply(self, additional_message_id: str, reply_text: str, username: str, reply_message_id: int, reply_chat_id: int, message=None):
+        """Сохраняет ответ на дополнительное сообщение и уведомляет UserBot"""
+        try:
+            logger.info(f"Saving additional reply for message {additional_message_id} from @{username}")
+            
+            # Извлекаем медиаданные из сообщения
+            media_data = await self._extract_reply_media_data(message) if message else {}
+            
+            # Пересылаем медиа в тему медиа в чате поддержки если есть
+            support_media_reply_message_id = None
+            if message and (media_data.get('has_photo') or media_data.get('has_video') or media_data.get('has_document')):
+                support_media_reply_message_id = await self._forward_reply_to_media_topic(message)
+            
+            # Парсим additional_message_id для получения task_id и message_count
+            # Формат: {task_id}_msg_{message_count}
+            parts = additional_message_id.split('_msg_')
+            if len(parts) != 2:
+                logger.error(f"Invalid additional_message_id format: {additional_message_id}")
+                return
+            
+            task_id = parts[0]
+            message_count = parts[1]
+            
+            # Получаем задачу для получения дополнительной информации
+            task = await redis_client.get_task(task_id)
+            if not task:
+                logger.error(f"Task {task_id} not found for additional reply")
+                return
+            
+            # Получаем список дополнительных сообщений
+            additional_messages = task.get('additional_messages', [])
+            if not isinstance(additional_messages, list):
+                additional_messages = []
+            
+            # Находим конкретное дополнительное сообщение и добавляем к нему данные ответа
+            message_found = False
+            for i, msg in enumerate(additional_messages):
+                # message_count включает основное сообщение, поэтому для дополнительных сообщений:
+                # message_count=2 соответствует первому дополнительному (индекс 0)
+                # message_count=3 соответствует второму дополнительному (индекс 1) и т.д.
+                additional_message_index = int(message_count) - 2  # -1 для основного сообщения, -1 для индексации с 0
+                if i == additional_message_index:
+                    # Добавляем данные ответа к дополнительному сообщению
+                    additional_messages[i].update({
+                        'reply_text': reply_text,
+                        'reply_author': username,
+                        'reply_at': datetime.now().isoformat(),
+                        'reply_message_id': reply_message_id,
+                        'reply_chat_id': reply_chat_id,
+                        'user_message_id': msg.get('user_message_id'),  # Сохраняем для UserBot
+                        'user_chat_id': msg.get('user_chat_id'),
+                        'user_topic_id': msg.get('user_topic_id')
+                    })
+                    
+                    # Добавляем медиаданные в ответ
+                    if media_data:
+                        additional_messages[i].update({
+                            "reply_has_photo": media_data.get("has_photo", False),
+                            "reply_has_video": media_data.get("has_video", False),
+                            "reply_has_document": media_data.get("has_document", False),
+                            "reply_photo_file_ids": media_data.get("photo_file_ids", []),
+                            "reply_video_file_id": media_data.get("video_file_id"),
+                            "reply_document_file_id": media_data.get("document_file_id"),
+                            "reply_support_media_message_id": support_media_reply_message_id
+                        })
+                    
+                    message_found = True
+                    break
+            
+            if not message_found:
+                logger.error(f"Additional message with count {message_count} not found in task {task_id}")
+                return
+            
+            # Обновляем задачу в Redis
+            await redis_client.update_task(task_id, additional_messages=additional_messages)
+            
+            # Отправляем событие UserBot для пересылки ответа пользователю
+            event_data = {
+                "type": "additional_message_reply",
+                "task_id": task_id,
+                "additional_message_id": additional_message_id,
+                "reply_text": reply_text,
+                "reply_author": username,
+                "reply_at": datetime.now().isoformat(),
+                "reply_message_id": reply_message_id,
+                "reply_chat_id": reply_chat_id,
+                "reply_support_media_message_id": support_media_reply_message_id,
+                "user_message_id": additional_messages[int(message_count) - 2].get('user_message_id'),
+                "user_chat_id": additional_messages[int(message_count) - 2].get('user_chat_id'),
+                "user_topic_id": additional_messages[int(message_count) - 2].get('user_topic_id')
+            }
+            
+            # Добавляем медиаданные в событие
+            if media_data:
+                event_data.update(media_data)
+            
+            await redis_client.publish_event("task_updates", event_data)
+            
+            logger.info(f"Additional reply saved and event published for message {additional_message_id}")
+            
+        except Exception as e:
+            logger.error(f"Error saving additional reply for message {additional_message_id}: {e}", exc_info=True)
 
     async def _forward_reply_to_media_topic(self, message) -> Optional[int]:
         """Пересылает ответ поддержки с медиа в тему медиа в чате поддержки"""
@@ -1651,7 +1794,7 @@ class MoverBot:
                     except Exception as fallback_error:
                         logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Failed to send fallback message: {fallback_error}")
             
-            # Сохраняем ID дополнительного сообщения в задаче
+            # Сохраняем ID дополнительного сообщения в задаче и добавляем кнопку "Ответить"
             if additional_message_id:
                 try:
                     # Получаем текущий список дополнительных сообщений
@@ -1659,16 +1802,50 @@ class MoverBot:
                     if not isinstance(additional_messages, list):
                         additional_messages = []
                     
-                    # Добавляем новое сообщение с информацией о теме
+                    # Извлекаем user_message_id из события для корректного reply
+                    user_message_id = event.get('user_message_id')
+                    user_chat_id = event.get('user_chat_id')
+                    user_topic_id = event.get('user_topic_id')
+                    
+                    # Добавляем новое сообщение с информацией о теме и пользователе
                     additional_messages.append({
                         'message_id': additional_message_id,
                         'topic_id': support_topic_id,
                         'chat_id': settings.FORUM_CHAT_ID,
-                        'created_at': datetime.now().isoformat()
+                        'created_at': datetime.now().isoformat(),
+                        'user_message_id': user_message_id,  # Для корректного reply
+                        'user_chat_id': user_chat_id,
+                        'user_topic_id': user_topic_id
                     })
                     
                     # Обновляем задачу в Redis
                     await redis_client.update_task(task_id, additional_messages=additional_messages)
+                    
+                    # Создаем уникальный идентификатор для дополнительного сообщения
+                    additional_message_unique_id = f"{task_id}_msg_{message_count}"
+                    
+                    # Проверяем, есть ли у задачи назначенный исполнитель
+                    executor = task.get('assignee')
+                    
+                    # Добавляем кнопку "Ответить" под дополнительным сообщением, если есть исполнитель
+                    if executor and additional_message_unique_id:
+                        try:
+                            # Создаем клавиатуру с кнопкой "Ответить"
+                            reply_keyboard = create_reply_keyboard(additional_message_unique_id)
+                            
+                            # Редактируем сообщение, добавляя клавиатуру
+                            await self.bot.edit_message_reply_markup(
+                                chat_id=settings.FORUM_CHAT_ID,
+                                message_id=additional_message_id,
+                                reply_markup=reply_keyboard
+                            )
+                            
+                            logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Added reply button to additional message {additional_message_id} with ID {additional_message_unique_id}")
+                            
+                        except Exception as keyboard_error:
+                            logger.error(f"[MOVERBOT][MESSAGE_APPENDED] Failed to add reply button to additional message: {keyboard_error}")
+                    else:
+                        logger.info(f"[MOVERBOT][MESSAGE_APPENDED] No executor assigned or invalid message ID, skipping reply button for message {additional_message_id}")
                     
                     logger.info(f"[MOVERBOT][MESSAGE_APPENDED] ✅ Saved additional message {additional_message_id} to task {task_id}")
                     
